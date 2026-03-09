@@ -1,0 +1,27 @@
+django==5.2.0
+djangorestframework==3.16.0
+django-cors-headers==4.7.0
+drf-spectacular==0.28.0
+djangorestframework-simplejwt>=5.3.1
+python-dotenv==1.0.1
+
+# Flamapy — validación de modelos de características UVL
+flamapy-fw==2.5.0
+flamapy-fm==2.5.0
+flamapy-bdd==2.5.0
+
+# Análisis SAT (en Windows/Python 3.13 puede requerir Build Tools C++)
+flamapy-sat==2.5.0; python_version < "3.13"
+
+# Validación geográfica
+shapely==2.0.7
+
+# Telemetría satelital (Google Earth Engine)
+earthengine-api>=0.1.420
+
+# Modelos predictivos
+tensorflow>=2.21
+scikit-learn>=1.4
+pandas>=2.0
+numpy>=1.26
+joblib>=1.3
