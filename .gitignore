@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Django
+backend/db.sqlite3
+backend/staticfiles/
+
+# Entorno
+.env
+*.json.key
+secrets/
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Modelos ML entrenados (binarios pesados, se regeneran entrenando)
+backend/model_storage/
+
+# Credenciales GEE (nunca al repositorio público)
+eeproject-*.json
+backend/secrets/
+
+# Versiones UVL auto-generadas en runtime
+backend/uvl_versions/
+
+# Configuración interna Claude Code
+.claude/
+
+# Ficheros internos de planificación y copias de trabajo
+PLAN.md
+agroTrain - copia.txt
