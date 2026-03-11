@@ -1,0 +1,94 @@
+namespace agroTrain
+
+features
+	Entrada
+		mandatory
+			DatosParcela { wizard_step 'parcel' }
+				mandatory
+					Cultivo { label 'Especie de cultivo' }
+						alternative
+							Olivo { window_size 7, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 700 }
+							Almendro { window_size 5, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 500 }
+							Vid { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 80, min_good 500 }
+							Naranjo { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
+							Limonero { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
+							Mandarino { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
+							Melocotonero { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
+							Nectarino { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
+							Ciruelo { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
+							Albaricoquero { window_size 5, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
+					TipoSuelo { label 'Tipo de suelo' }
+						alternative
+							CampinaArcillosa { label 'Campiña arcillosa / bujeo' }
+							LomasCalizasAlbariza { label 'Lomas calizas / albariza' }
+							VegaAluvial { label 'Vega o terraza aluvial' }
+							PiedemonteSierra { label 'Piedemonte / sierra' }
+							MarismasSalinas { label 'Marismas o suelos salinos' }
+		mandatory
+			ParametrosEntrada { label 'Parámetros de entrada', wizard_step 'sensors' }
+				mandatory
+					Dendrometro { label 'Dendrómetro' }
+						optional
+							DatoMCD { label 'Dato MCD', csv_col 'MCD' }
+							DatoTB { label 'Dato Tasa de buenos', csv_col 'TasaBuenos' }
+							DatoTS { label 'Dato Tasa de severos', csv_col 'TasaSeveros' }
+				optional
+					HumedadSuelo { label 'Humedad del suelo' }
+						optional
+							Hd05 { label '5 cm', csv_col 'humedad_Hd05' }
+							Hd15 { label '15 cm', csv_col 'humedad_Hd15' }
+							Hd25 { label '25 cm', csv_col 'humedad_Hd25' }
+							Hd35 { label '35 cm', csv_col 'humedad_Hd35' }
+							Hd45 { label '45 cm', csv_col 'humedad_Hd45' }
+							Hd55 { label '55 cm', csv_col 'humedad_Hd55' }
+							Hd65 { label '65 cm', csv_col 'humedad_Hd65' }
+							Hd75 { label '75 cm', csv_col 'humedad_Hd75' }
+					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
+		mandatory
+			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
+				optional
+					NDVI { csv_col 'NDVI' }
+					EVI { csv_col 'EVI' }
+					SAVI { csv_col 'SAVI' }
+					NDWI { csv_col 'NDWI' }
+				mandatory
+					Nubes { label 'Umbral de nubes' }
+		mandatory
+			VariableObjetivo { label 'Variable objetivo', wizard_step 'objective' }
+				alternative
+					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80 }
+					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70 }
+					MCD { quality_min 0.35, quality_good 0.50 }
+constraints
+	Hd05 => HumedadSuelo
+	Hd15 => HumedadSuelo
+	Hd25 => HumedadSuelo
+	Hd35 => HumedadSuelo
+	Hd45 => HumedadSuelo
+	Hd55 => HumedadSuelo
+	Hd65 => HumedadSuelo
+	Hd75 => HumedadSuelo
+	HumedadSuelo => Hd05 | Hd15 | Hd25 | Hd35 | Hd45 | Hd55 | Hd65 | Hd75
+	Dendrometro => DatoMCD | DatoTB | DatoTS
+	TasaBuenos => DatoTB
+	TasaSeveros => DatoTS
+	MCD => DatoMCD
+	NDWI => (NDVI | EVI | SAVI)
+	LomasCalizasAlbariza => (SAVI & NDWI)
+	CampinaArcillosa => (NDVI & NDWI) | (EVI & NDWI)
+	MarismasSalinas => (NDWI & EVI)
+	VegaAluvial => (NDVI) | (EVI)
+	PiedemonteSierra => (EVI & SAVI)
+	Naranjo => HumedadSuelo
+	Limonero => HumedadSuelo
+	Mandarino => HumedadSuelo
+	Naranjo => Hd05 | Hd15
+	Limonero => Hd05 | Hd15
+	Mandarino => Hd05 | Hd15
+	Vid => Hd15 | Hd25 | Hd35
+	Melocotonero => Hd15 | Hd25 | Hd35
+	Nectarino => Hd15 | Hd25 | Hd35
+	Ciruelo => Hd15 | Hd25 | Hd35
+	Almendro => Hd25 | Hd35 | Hd45
+	Albaricoquero => Hd25 | Hd35 | Hd45
+	Olivo => Hd35 | Hd45 | Hd55
