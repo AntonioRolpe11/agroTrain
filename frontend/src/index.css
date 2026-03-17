@@ -1,0 +1,144 @@
+@import url("https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 30% 97%;
+    --foreground: 30 10% 15%;
+
+    --card: 40 25% 95%;
+    --card-foreground: 30 10% 15%;
+
+    --popover: 40 30% 97%;
+    --popover-foreground: 30 10% 15%;
+
+    --primary: 88 30% 32%;
+    --primary-foreground: 40 30% 97%;
+
+    --secondary: 30 20% 88%;
+    --secondary-foreground: 30 10% 25%;
+
+    --muted: 40 15% 92%;
+    --muted-foreground: 30 8% 50%;
+
+    --accent: 210 45% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 35 15% 85%;
+    --input: 35 15% 85%;
+    --ring: 88 30% 32%;
+
+    --radius: 0.625rem;
+
+    --olive: 88 30% 32%;
+    --olive-light: 88 25% 45%;
+    --earth: 25 30% 40%;
+    --earth-light: 30 25% 70%;
+    --sand: 38 35% 90%;
+    --data-blue: 210 45% 55%;
+    --data-blue-light: 210 40% 80%;
+    --sensor-green: 140 35% 45%;
+    --satellite-amber: 35 70% 55%;
+    --virtual-teal: 175 40% 42%;
+
+    --sidebar-background: 40 25% 95%;
+    --sidebar-foreground: 30 10% 25%;
+    --sidebar-primary: 88 30% 32%;
+    --sidebar-primary-foreground: 40 30% 97%;
+    --sidebar-accent: 40 15% 92%;
+    --sidebar-accent-foreground: 30 10% 25%;
+    --sidebar-border: 35 15% 85%;
+    --sidebar-ring: 88 30% 32%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Source Serif 4", Georgia, serif;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .section-container {
+    @apply max-w-6xl mx-auto px-6 lg:px-8;
+  }
+
+  .config-block {
+    @apply bg-card rounded-xl p-6 border border-border shadow-sm;
+  }
+
+  .sensor-chip {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200;
+  }
+
+  .sensor-chip-physical {
+    @apply sensor-chip bg-sensor-green/15 text-sensor-green border border-sensor-green/25;
+  }
+
+  .sensor-chip-virtual {
+    @apply sensor-chip bg-virtual-teal/15 text-virtual-teal border border-virtual-teal/25;
+  }
+
+  .sensor-chip-satellite {
+    @apply sensor-chip bg-satellite-amber/15 text-satellite-amber border border-satellite-amber/25;
+  }
+
+  .parcel-map-shell .leaflet-container {
+    @apply bg-muted;
+  }
+
+  .parcel-map-shell .leaflet-control-attribution {
+    @apply text-[10px];
+  }
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.animate-reveal-up {
+  animation: reveal-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out both;
+}
