@@ -1,0 +1,67 @@
+@startuml
+
+title Diagrama de Secuencia: UVL → BDD + Árbol de Features al Frontend
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+skinparam defaultFontName Arial
+skinparam sequenceArrowThickness 1.5
+skinparam roundcorner 5
+
+participant "Django\n(apps.py)" as Django
+participant "FlamapyService" as Flamapy
+database "agroTrain.uvl" as UVL
+participant "BDD\n(PyBDD)" as BDD
+participant "Frontend\n(React)" as Frontend
+
+== Inicialización del Servidor ==
+
+Django -> Flamapy : warm_up(UVL_MODEL_PATH)
+activate Flamapy
+
+Flamapy -> UVL : leer fichero UVL
+activate UVL
+UVL --> Flamapy : árbol de features (texto UVL)
+deactivate UVL
+
+Flamapy -> BDD : construir BDD desde árbol UVL\n(Flamapy + PySAT)
+activate BDD
+BDD --> Flamapy : BDD compilada
+deactivate BDD
+note right of Flamapy : BDD almacenada\na nivel de clase
+
+Flamapy -> Flamapy : recopilar etiquetas\n(atributo "label" de cada nodo)
+
+Flamapy -> Flamapy : derivar ámbitos por paso\n(atributo "wizard_step" de subárboles)\n→ _scope_features: dict[step → features]
+
+Flamapy --> Django : warm_up() completado
+deactivate Flamapy
+
+note over Django, Flamapy : Servidor listo. BDD en caché.
+
+== Solicitud del Feature Model ==
+
+Frontend -> Flamapy : GET /api/v1/configurator/feature-model
+activate Flamapy
+
+Flamapy -> Flamapy : to_dict()\nserializar árbol recursivamente
+
+note right of Flamapy
+  Estructura FeatureModelNode:
+  - name
+  - relations (tipo: MANDATORY /
+    OPTIONAL / ALTERNATIVE / OR)
+  - attributes (label, wizard_step,
+    csv_col, window_size, ...)
+  - constraints (AST)
+end note
+
+Flamapy --> Frontend : 200 OK — JSON (árbol completo + restricciones)
+deactivate Flamapy
+
+Frontend -> Frontend : almacenar en caché\n(React Query)
+Frontend -> Frontend : renderizar wizard\n(paso 0 — Parcela)
+
+@enduml

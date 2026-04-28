@@ -1,0 +1,60 @@
+@startuml
+
+title Diagrama de Secuencia: Validación del Wizard
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+skinparam defaultFontName Arial
+skinparam sequenceArrowThickness 1.5
+skinparam roundcorner 5
+
+actor "Usuario" as User
+boundary "Navegador" as Browser
+participant "FeatureNode\n(React)" as FN
+participant "FeatureTreesContext" as Ctx
+participant "StepComponent\n(useMemo)" as Step
+participant "Django REST" as API
+participant "FlamapyService\n(BDD)" as Flamapy
+
+== 1. Evaluación reactiva (cada toggle) ==
+
+User -> Browser : activa / desactiva feature
+Browser -> FN : onChange event
+FN -> Ctx : setTrees([{ features: [...] }])
+Ctx --> Step : re-render
+Step -> Step : useMemo recalcula\nintraViolations + incomingHints
+note right of Step
+  getViolations() — restricciones violadas por features seleccionadas
+  getIncomingRequirements() — hints IMPLIES con antecedente activo
+end note
+Step --> Browser : render hints ámbar + estado del botón
+Browser --> User : muestra hints / botón habilitado o bloqueado
+
+== 2. Validación servidor (al pulsar "Listo") ==
+
+User -> Browser : pulsa "Listo"
+Browser -> Step : onClick
+Step -> API : POST /api/v1/configurator/validate-features\n{ features, is_full, step }
+activate API
+API -> Flamapy : validate_features(features, is_full, step)
+activate Flamapy
+Flamapy -> Flamapy : pinear False features no seleccionadas\nBDD satisfiability check
+alt configuración inválida
+  Flamapy --> API : { valid: false, errors: [...] }
+  deactivate Flamapy
+  API --> Step : 400
+  deactivate API
+  Step --> Browser : render errores inline
+  Browser --> User : muestra errores, paso bloqueado
+else configuración válida
+  Flamapy --> API : { valid: true }
+  deactivate Flamapy
+  API --> Step : 200 OK
+  deactivate API
+  Step --> Browser : render paso siguiente desbloqueado
+  Browser --> User : muestra siguiente paso
+end
+
+@enduml
