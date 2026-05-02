@@ -1,0 +1,64 @@
+@startuml agroTrain2-apis
+left to right direction
+skinparam componentStyle uml2
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+skinparam component {
+  BackgroundColor #FFFFFF
+  FontColor #000000
+  BorderColor #000000
+  FontStyle bold
+}
+skinparam interface {
+  BackgroundColor #000000
+  BorderColor #000000
+}
+skinparam arrow {
+  Color #333333
+  FontColor #333333
+  FontSize 9
+}
+
+
+
+
+
+
+' ===== BACKEND =====
+frame "Backend\n:8000" as BE {
+  component "Configurador\n(Flamapy + BDD)" as CONF
+  component "Geo\n(provinces)"              as GEO
+  component "Telemetria\n(Sentinel-2)"      as TEL
+  component "Modelos\n(LSTM / GB)"          as MOD
+}
+
+' ===== INTERFACES (APIs expuestas por Backend) =====
+() "Feature Model\n+ Validation" as ICONF
+() "Geo API"                      as IGEO
+() "Telemetry API"                as ITEL
+() "Training API"                 as IMOD
+
+' ===== FRONTEND =====
+frame "Frontend\n:8080" as FE {
+  component "Wizard\n(4-step config)"   as Wizard
+  component "Results\n(CSV + training)" as Results
+}
+
+' Backend provee APIs (lollipop, hacia la derecha)
+ICONF -right- CONF
+IGEO  -right- GEO
+ITEL  -right- TEL
+IMOD  -right- MOD
+
+' ===== CONEXIONES =====
+' Frontend usa APIs (hacia arriba)
+Wizard  -up..> ICONF : use
+Wizard  -up..> IGEO  : use
+Results -up..> ITEL  : use
+Results -up..> IMOD  : use
+
+
+
+@enduml
