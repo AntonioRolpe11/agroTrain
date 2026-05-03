@@ -1,0 +1,86 @@
+@startuml
+
+title Diagrama de Secuencia: Guardar Configuración y Modelos en BD\n[Diseño propuesto — pendiente de implementación]
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+skinparam defaultFontName Arial
+skinparam sequenceArrowThickness 1.5
+skinparam roundcorner 5
+skinparam NoteBackgroundColor #FFFACD
+skinparam NoteBorderColor #DAA520
+
+participant "Frontend\n(Wizard)" as Frontend
+participant "ConfiguradorAPI" as ConfigAPI
+participant "ModelsAPI" as ModelAPI
+database "PostgreSQL" as DB
+
+note over Frontend, DB
+  Diseño propuesto — pendiente de implementación.
+  Actualmente los modelos se persisten en disco
+  y las configuraciones no se almacenan en BD.
+end note
+
+== Guardar Configuración del Wizard ==
+
+Frontend -> ConfigAPI : POST /api/v1/configurator/configurations\n{features[], metadatos parcela, geometría GeoJSON}
+activate ConfigAPI
+
+ConfigAPI -> ConfigAPI : validar configuración\nvía BDD (is_full=true)
+
+ConfigAPI -> DB : INSERT Configuracion\n(features JSON, datos parcela,\ngeometría, timestamp, usuario)
+activate DB
+DB --> ConfigAPI : configuration_id
+deactivate DB
+
+ConfigAPI --> Frontend : 201 Created\n{configuration_id, status: "saved"}
+deactivate ConfigAPI
+
+Frontend -> Frontend : almacenar configuration_id\npara asociar al modelo
+
+== Entrenamiento y Vinculación del Modelo ==
+
+note over Frontend : Usuario procede a Results.tsx\ny entrena modelo correctamente
+
+Frontend -> ModelAPI : POST /api/v1/modelos/train\n[features[] + csv_file]
+activate ModelAPI
+ModelAPI --> Frontend : {job_id, status: "pending"}
+deactivate ModelAPI
+
+note over Frontend, ModelAPI : [flujo de entrenamiento async — ver diagrama anterior]
+
+Frontend -> ModelAPI : PATCH /api/v1/modelos/{job_id}/\n{configuration_id}
+activate ModelAPI
+
+ModelAPI -> DB : UPDATE Modelo\nSET configuration_id = FK → Configuracion
+activate DB
+DB --> ModelAPI : confirmado
+deactivate DB
+
+ModelAPI --> Frontend : 200 OK
+deactivate ModelAPI
+
+== Recuperación Posterior ==
+
+Frontend -> ConfigAPI : GET /api/v1/configurator/configurations/{id}
+activate ConfigAPI
+ConfigAPI -> DB : SELECT Configuracion WHERE id
+activate DB
+DB --> ConfigAPI : {features[], metadatos parcela, geometría}
+deactivate DB
+ConfigAPI --> Frontend : configuración completa
+deactivate ConfigAPI
+Frontend -> Frontend : restaurar estado del wizard\n(features activas + datos de parcela)
+
+Frontend -> ModelAPI : GET /api/v1/modelos/?configuration={id}
+activate ModelAPI
+ModelAPI -> DB : SELECT Modelos WHERE configuration_id
+activate DB
+DB --> ModelAPI : lista de modelos vinculados
+deactivate DB
+ModelAPI --> Frontend : [{modelo_id, métricas, fecha}, ...]
+deactivate ModelAPI
+
+@enduml

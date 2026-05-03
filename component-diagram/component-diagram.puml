@@ -1,0 +1,74 @@
+@startuml agroTrain2-components
+left to right direction
+skinparam componentStyle uml2
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+
+skinparam component {
+  BackgroundColor #FFFFFF
+  FontColor #000000
+  BorderColor #000000
+  FontStyle bold
+}
+skinparam databaseBackgroundColor #FEF3C7
+skinparam database {
+  BorderColor #D97706
+}
+skinparam cloud {
+  BackgroundColor #F0F4FF
+  BorderColor #6676AA
+}
+skinparam node {
+  BackgroundColor #F8F8F8
+  BorderColor #666666
+}
+skinparam folder {
+  BackgroundColor #F8F8F8
+  BorderColor #666666
+}
+skinparam arrow {
+  Color #333333
+  FontColor #333333
+  FontSize 9
+}
+skinparam linetype ortho
+
+' ===== EXTERNOS =====
+() "Browser"                 as Browser
+folder "agroTrain.uvl"       as UVL
+cloud "Google Earth\nEngine" as GEE
+node "TensorFlow + scikit-learn"     as ML
+
+' ===== SISTEMA =====
+frame "Frontend\n:8080" as FE {
+  component "Wizard\n(4-step config)"   as Wizard
+  component "Results\n(CSV + training)" as Results
+}
+
+frame "Backend\n:8000" as BE {
+  component "Configurador\n(Flamapy + BDD)" as CONF
+  component "Geolocalizacion\n(provinces)"              as GEO
+  component "Telemetria\n(Sentinel-2)"      as TEL
+  component "Modelos\n(LSTM / GB)"          as MOD
+  database "PostgreSQL"                     as DB
+}
+
+' ===== CONEXIONES =====
+Browser --> FE
+
+' Frontend usa Backend
+Wizard  ..> CONF
+Wizard  ..> GEO
+Results ..> TEL
+Results ..> MOD
+
+' Backend usa externos
+CONF ..> UVL
+CONF ..> DB
+GEO  ..> DB
+MOD  ..> DB
+TEL  ..> GEE
+MOD  ..> ML
+
+@enduml

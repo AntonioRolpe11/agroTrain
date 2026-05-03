@@ -1,0 +1,111 @@
+@startuml
+
+title Diagrama de Secuencia: Generación de Modelo ML
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 20
+skinparam defaultFontName Arial
+skinparam sequenceArrowThickness 1.5
+skinparam roundcorner 5
+
+participant "Frontend\n(Results.tsx)" as Frontend
+participant "ModelsAPI\n(views.py)" as API
+participant "TrainingService\n(hilo daemon)" as Training
+participant "FlamapyService" as Flamapy
+participant "StorageService" as Storage
+
+== Preparación (hilo principal) ==
+
+Frontend -> API : POST /api/v1/modelos/train\n[multipart: features[] JSON + csv_file]
+activate API
+
+API -> Flamapy : get_subtree_feature_names("VariableObjetivo")\nget_subtree_feature_names("Cultivo")
+activate Flamapy
+Flamapy --> API : nombres de targets y cultivos
+deactivate Flamapy
+
+API -> Flamapy : get_csv_columns(feature)\npara cada feature de entrada
+activate Flamapy
+Flamapy --> API : columnas CSV\n(csv_col / csv_cols del UVL)
+deactivate Flamapy
+
+note right of API
+  _features_to_training_params():
+  - target (1 variable, restricción ALTERNATIVE)
+  - input_cols (columnas CSV de entrada)
+  - crop (cultivo seleccionado)
+end note
+
+API -> API : crear registro en _registry\nestado="training"
+API ->> Training : spawn hilo daemon\n_train(model_id, targets, input_cols, crop, csv_content)
+activate Training
+
+API --> Frontend : 202 Accepted\n{model_id, status: "training"}
+deactivate API
+
+== Ejecución concurrente ==
+
+par Sondeo del Frontend (cada 3 s)
+    loop mientras status != "completed"
+        Frontend -> API : GET /api/v1/modelos/{model_id}/status
+        activate API
+        note right of API : lee _registry\n(dict en memoria compartida)
+        API --> Frontend : {status: "training", phase: ...}
+        deactivate API
+    end
+else Pipeline de Entrenamiento (hilo daemon)
+    Training -> Flamapy : get_crop_profile(cultivo)\n← atributos UVL del nodo cultivo
+    activate Flamapy
+    Flamapy --> Training : {window_size, preferred_algorithm, min_samples}
+    deactivate Flamapy
+
+    Training -> Training : cargar y validar fichero CSV\n(filtrar filas, verificar columnas requeridas)
+
+    Training -> Training : algorithm = preferred_algorithm (UVL)\ncontar filas válidas (n_joint)
+
+    opt preferred_algorithm == "LSTM"
+        alt TF no disponible
+            Training -> Training : algorithm = GradientBoosting\n+ advertencia: TF no disponible
+        else n_joint < min_samples
+            Training -> Training : algorithm = GradientBoosting\n+ advertencia: datos insuficientes para LSTM
+        end
+    end
+
+    alt algorithm == "LSTM"
+        Training -> Training : entrenar LSTM\nventana autoregresiva: window_size días\nMinMaxScaler + EarlyStopping
+        Training -> Flamapy : get_quality_thresholds(objetivo)\n← atributos quality_min, quality_good del UVL
+        activate Flamapy
+        Flamapy --> Training : {quality_min, quality_good}
+        deactivate Flamapy
+        Training -> Training : evaluar R² frente a umbrales\ngenerar advertencia de calidad si procede
+    else algorithm == "GradientBoosting"
+        Training -> Training : entrenar GradientBoosting\nfeatures de lag + features cíclicas\n(día del año)
+        Training -> Flamapy : get_quality_thresholds(objetivo)\n← atributos quality_min, quality_good del UVL
+        activate Flamapy
+        Flamapy --> Training : {quality_min, quality_good}
+        deactivate Flamapy
+        Training -> Training : evaluar R² frente a umbrales\ngenerar advertencia de calidad si procede
+    end
+
+    Training -> Storage : guardar ficheros del modelo en disco\n(pesos, scaler, metadatos)
+    activate Storage
+    Storage --> Training : confirmación de guardado
+    deactivate Storage
+
+    Training -> Training : actualizar _registry[model_id]\nestado="completed" + métricas R²
+    deactivate Training
+end
+
+== Recepción del Resultado ==
+
+Frontend -> API : GET /api/v1/modelos/{model_id}/status
+activate API
+note right of API : lee _registry → estado="completed"
+API --> Frontend : {status: "completed", metrics: {R², advertencias}}
+deactivate API
+
+Frontend -> Frontend : mostrar resultados\n(indicadores de calidad)
+
+@enduml

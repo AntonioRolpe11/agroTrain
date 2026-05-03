@@ -1,0 +1,152 @@
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- FRONTEND subsystem -->
+    <mxCell id="fe-pkg" value="«subsystem»&#xa;Frontend — React + TypeScript"
+      style="rounded=0;whiteSpace=wrap;container=1;collapsible=0;
+             dashed=1;dashPattern=8 4;strokeWidth=2;
+             verticalAlign=top;fontStyle=2;fontSize=13;align=center;spacingTop=5;"
+      vertex="1" parent="1">
+      <mxGeometry x="40" y="40" width="640" height="280" as="geometry" />
+    </mxCell>
+
+    <mxCell id="fe-wizard" value="«component»&#xa;Wizard&#xa;DigitalSensorCreation.tsx"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="fe-pkg">
+      <mxGeometry x="20" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="fe-ctx" value="«component»&#xa;FeatureTreesContext&#xa;features activos (string[])"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="fe-pkg">
+      <mxGeometry x="225" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="fe-results" value="«component»&#xa;Results&#xa;CSV + entrenamiento"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="fe-pkg">
+      <mxGeometry x="430" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="fe-node" value="«component»&#xa;FeatureNode&#xa;renderizado recursivo UVL"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="fe-pkg">
+      <mxGeometry x="20" y="168" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="fe-eval" value="«component»&#xa;constraintEvaluator&#xa;evalAST + hints"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="fe-pkg">
+      <mxGeometry x="225" y="168" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <!-- BACKEND subsystem -->
+    <mxCell id="be-pkg" value="«subsystem»&#xa;Backend — Django REST Framework"
+      style="rounded=0;whiteSpace=wrap;container=1;collapsible=0;
+             dashed=1;dashPattern=8 4;strokeWidth=2;
+             verticalAlign=top;fontStyle=2;fontSize=13;align=center;spacingTop=5;"
+      vertex="1" parent="1">
+      <mxGeometry x="40" y="440" width="640" height="240" as="geometry" />
+    </mxCell>
+
+    <mxCell id="be-conf" value="«component»&#xa;configurador&#xa;FlamapyService + BDD"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="be-pkg">
+      <mxGeometry x="20" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="be-geo" value="«component»&#xa;geo&#xa;Shapely + catálogo provincias"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="be-pkg">
+      <mxGeometry x="225" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="be-tel" value="«component»&#xa;telemetria&#xa;cliente GEE"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="be-pkg">
+      <mxGeometry x="430" y="60" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <mxCell id="be-mod" value="«component»&#xa;modelos&#xa;LSTM / GradientBoosting (async)"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;"
+      vertex="1" parent="be-pkg">
+      <mxGeometry x="225" y="155" width="175" height="72" as="geometry" />
+    </mxCell>
+
+    <!-- UVL artifact -->
+    <mxCell id="uvl" value="«artifact»&#xa;agroTrain.uvl&#xa;fuente única de verdad"
+      style="shape=note;whiteSpace=wrap;fontSize=11;fontStyle=1;size=16;
+             fillColor=#fffde7;strokeColor=#f9a825;"
+      vertex="1" parent="1">
+      <mxGeometry x="790" y="300" width="170" height="95" as="geometry" />
+    </mxCell>
+
+    <!-- GEE external system -->
+    <mxCell id="gee" value="«external system»&#xa;Google Earth Engine&#xa;Sentinel-2"
+      style="shape=component;align=left;spacingLeft=36;whiteSpace=wrap;fontSize=11;
+             fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;"
+      vertex="1" parent="1">
+      <mxGeometry x="790" y="460" width="170" height="72" as="geometry" />
+    </mxCell>
+
+    <!-- Database -->
+    <mxCell id="db" value="«database»&#xa;SQLite / PostgreSQL&#xa;modelos entrenados"
+      style="shape=cylinder3;whiteSpace=wrap;fontSize=11;
+             fillColor=#f5f5f5;strokeColor=#666666;"
+      vertex="1" parent="1">
+      <mxGeometry x="790" y="565" width="170" height="85" as="geometry" />
+    </mxCell>
+
+    <!-- EDGES -->
+
+    <!-- Frontend -> Backend: REST -->
+    <mxCell id="e-rest" value="«use» REST HTTP / JSON"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="fe-pkg" target="be-pkg" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- configurador <<use>> UVL -->
+    <mxCell id="e-conf-uvl" value="«use»&#xa;warm_up / validate"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="be-conf" target="uvl" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- modelos <<use>> UVL -->
+    <mxCell id="e-mod-uvl" value="«use»&#xa;crop_profile / thresholds"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="be-mod" target="uvl" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- telemetria <<use>> GEE -->
+    <mxCell id="e-tel-gee" value="«use»&#xa;extracción índices"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="be-tel" target="gee" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- modelos <<use>> DB -->
+    <mxCell id="e-mod-db" value="«use»&#xa;storage modelos"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="be-mod" target="db" parent="1">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+
+    <!-- Frontend <<use>> UVL (via API, feature-model endpoint) -->
+    <mxCell id="e-fe-uvl" value="«use»&#xa;feature-model JSON"
+      style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
+      edge="1" source="fe-pkg" target="uvl" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="750" y="155" />
+          <mxPoint x="875" y="155" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+
+  </root>
+</mxGraphModel>
