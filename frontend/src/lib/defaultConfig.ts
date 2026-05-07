@@ -18,7 +18,7 @@ export const defaultConfig: ConfigState = {
   variableObjetivo: null,
   parcela: {
     nombre: "",
-    especieCultivo: null,
+    tratamiento: null,
     tipoSuelo: null,
     provinciaId: null,
     provinciaNombre: null,

@@ -35,10 +35,10 @@ type SectionDef = {
 
 const SECTIONS: SectionDef[] = [
   {
-    id: "cultivo",
-    title: "Cultivos",
+    id: "tratamiento",
+    title: "Tratamientos",
     hint: "Grupo alternative — sólo uno seleccionable por configuración.",
-    parentName: "Cultivo",
+    parentName: "Tratamiento",
     relType: "ALTERNATIVE",
     leavesOnly: false,
     attrFields: [
@@ -624,7 +624,7 @@ export default function UvlEditor() {
   function renderSections(tree: FeatureModelNode, editable: boolean) {
     return (
       <div className="space-y-4">
-        {/* Parcela: Cultivos + Tipos suelo side by side */}
+        {/* Parcela: Tratamientos + Tipos suelo side by side */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-border rounded-xl p-4">
           {SECTIONS.slice(0, 2).map(section => (
             <LeafGroupPanel

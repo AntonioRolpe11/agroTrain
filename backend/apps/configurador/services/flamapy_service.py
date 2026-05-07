@@ -263,22 +263,22 @@ class FlamapyService:
             return None
         return {"min": float(attrs["quality_min"]), "good": float(attrs["quality_good"])}
 
-    _DEFAULT_CROP_PROFILE: dict = {
+    _DEFAULT_TREATMENT_PROFILE: dict = {
         "window_size": 5,
         "preferred_algorithm": "GradientBoosting",
         "min_samples": 80,
     }
 
     @classmethod
-    def get_crop_profile(cls, crop_name: str) -> dict:
-        """Training profile for a crop, derived from UVL attributes (window_size, preferred_algorithm, min_samples)."""
+    def get_treatment_profile(cls, treatment_name: str) -> dict:
+        """Training profile for an olive irrigation treatment, derived from UVL attributes."""
         if cls._base_fm_model is None:
             raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, crop_name)
+        node = cls._find_feature(cls._base_fm_model.root, treatment_name)
         if node is None:
-            return dict(cls._DEFAULT_CROP_PROFILE)
+            return dict(cls._DEFAULT_TREATMENT_PROFILE)
         attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
-        profile = dict(cls._DEFAULT_CROP_PROFILE)
+        profile = dict(cls._DEFAULT_TREATMENT_PROFILE)
         if "window_size" in attrs:
             profile["window_size"] = int(attrs["window_size"])
         if "preferred_algorithm" in attrs:
@@ -286,6 +286,11 @@ class FlamapyService:
         if "min_samples" in attrs:
             profile["min_samples"] = int(attrs["min_samples"])
         return profile
+
+    @classmethod
+    def get_crop_profile(cls, crop_name: str) -> dict:
+        """Backward-compatible alias for legacy callers; use get_treatment_profile."""
+        return cls.get_treatment_profile(crop_name)
 
     # ------------------------------------------------------------------
     # Feature model serialization

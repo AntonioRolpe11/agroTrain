@@ -43,7 +43,11 @@ class StorageService:
         path = self._model_dir(model_id) / "metadata.json"
         if not path.exists():
             raise StorageError(f"metadata.json no encontrado para '{model_id}'.")
-        return json.loads(path.read_text(encoding="utf-8"))
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        if "treatment" not in metadata and "crop" in metadata:
+            metadata["treatment"] = metadata["crop"]
+        metadata.pop("crop", None)
+        return metadata
 
     # ------------------------------------------------------------------ LSTM
 
@@ -125,6 +129,9 @@ class StorageService:
         meta_path = d / "metadata.json"
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         meta["model_id"] = new_id
+        if "treatment" not in meta and "crop" in meta:
+            meta["treatment"] = meta["crop"]
+        meta.pop("crop", None)
         meta["imported"] = True
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 

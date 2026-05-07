@@ -13,7 +13,7 @@ const concepts = [
   {
     icon: Satellite,
     title: "Datos de telemetría",
-    description: "Selección múltiple de NDVI, EVI, SAVI y NDWI con reglas por cultivo y suelo.",
+    description: "Selección múltiple de NDVI, EVI, SAVI y NDWI con reglas por tratamiento y suelo.",
     chipClass: "sensor-chip-satellite",
   },
   {

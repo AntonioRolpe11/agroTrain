@@ -126,7 +126,7 @@ export interface TrainingStatus {
   detail?: string | null;
   // campos adicionales cuando status === "completed" (vienen del metadata)
   model_id?: string;
-  crop?: string;
+  treatment?: string;
   targets?: string[];
   n_samples?: number;
 }
@@ -205,7 +205,7 @@ export interface AuthUser {
 export interface ModelMetadata {
   model_id: string;
   algorithm: string;
-  crop: string;
+  treatment: string;
   features?: string[];
   geo?: Record<string, unknown> & {
     punto?: { lat: number; lng: number } | null;

@@ -66,7 +66,7 @@ class TrainingService:
         self,
         targets: list[str],
         input_cols: list[str],
-        crop: str,
+        treatment: str,
         csv_content: bytes,
         features: list[str] | None = None,
         geo: dict | None = None,
@@ -84,7 +84,7 @@ class TrainingService:
             }
         threading.Thread(
             target=self._train,
-            args=(model_id, targets, input_cols, crop, csv_content, features or [], geo or {}, user_id),
+            args=(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id),
             daemon=True,
         ).start()
         return model_id
@@ -94,14 +94,14 @@ class TrainingService:
         model_id: str,
         targets: list[str],
         input_cols: list[str],
-        crop: str,
+        treatment: str,
         csv_content: bytes,
         features: list[str],
         geo: dict,
         user_id: int | None,
     ) -> None:
         try:
-            self._run_pipeline(model_id, targets, input_cols, crop, csv_content, features, geo, user_id)
+            self._run_pipeline(model_id, targets, input_cols, treatment, csv_content, features, geo, user_id)
         except Exception as exc:
             logger.exception("Error entrenando modelo %s", model_id)
             _update_registry(model_id, status="error", detail=str(exc))
@@ -111,7 +111,7 @@ class TrainingService:
         model_id: str,
         targets: list[str],
         input_cols: list[str],
-        crop: str,
+        treatment: str,
         csv_content: bytes,
         features: list[str] | None = None,
         geo: dict | None = None,
@@ -132,7 +132,7 @@ class TrainingService:
         if missing:
             raise ModelosServiceError(f"Columnas ausentes en CSV: {missing}")
 
-        profile = FlamapyService.get_crop_profile(crop)
+        profile = FlamapyService.get_treatment_profile(treatment)
         window_size: int = profile["window_size"]
         preferred: str = profile["preferred_algorithm"]
         min_samples: int = profile["min_samples"]
@@ -157,9 +157,9 @@ class TrainingService:
                 )
 
         if algorithm == "LSTM":
-            self._train_lstm(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, features or [], geo or {})
+            self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {})
         else:
-            self._train_sklearn(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, algorithm, features or [], geo or {})
+            self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {})
 
         self._create_db_record(model_id, user_id)
 
@@ -172,7 +172,7 @@ class TrainingService:
         targets: list[str],
         input_features: list[str],
         window_size: int,
-        crop: str,
+        treatment: str,
         all_cols: list[str],
         warnings: list[str],
         features: list[str],
@@ -264,7 +264,7 @@ class TrainingService:
         self._storage.save_metadata(model_id, {
             "model_id": model_id,
             "algorithm": "LSTM",
-            "crop": crop,
+            "treatment": treatment,
             "features": features,
             "geo": geo,
             "all_cols": all_cols,
@@ -297,7 +297,7 @@ class TrainingService:
         targets: list[str],
         input_features: list[str],
         window_size: int,
-        crop: str,
+        treatment: str,
         all_cols: list[str],
         warnings: list[str],
         algorithm: str,
@@ -360,7 +360,7 @@ class TrainingService:
         self._storage.save_metadata(model_id, {  # type: ignore[arg-type]
             "model_id": model_id,
             "algorithm": algorithm,
-            "crop": crop,
+            "treatment": treatment,
             "features": features,
             "geo": geo,
             "all_cols": all_cols,
@@ -395,7 +395,7 @@ class TrainingService:
                 defaults={
                     "user_id": user_id,
                     "algorithm": meta.get("algorithm", ""),
-                    "crop": meta.get("crop", ""),
+                    "treatment": meta.get("treatment") or meta.get("crop", ""),
                     "features": meta.get("features", []),
                     "geo": meta.get("geo", {}),
                     "targets": meta.get("targets", []),

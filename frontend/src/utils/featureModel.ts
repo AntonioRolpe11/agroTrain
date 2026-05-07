@@ -156,13 +156,13 @@ function collectCsvFeaturesRec(
   }
 }
 
-export function buildCropTrainingThresholds(
+export function buildTreatmentTrainingThresholds(
   model: FeatureModelNode,
 ): Record<string, { minReject: number; minWarn: number; minGood: number }> {
-  const cultivoNode = getNode(model, "Cultivo");
-  if (!cultivoNode) return {};
+  const tratamientoNode = getNode(model, "Tratamiento");
+  if (!tratamientoNode) return {};
   const result: Record<string, { minReject: number; minWarn: number; minGood: number }> = {};
-  for (const rel of getRelations(cultivoNode)) {
+  for (const rel of getRelations(tratamientoNode)) {
     for (const child of rel.children ?? []) {
       const a = child.attributes ?? {};
       if (a.min_reject !== undefined && a.min_warn !== undefined && a.min_good !== undefined) {

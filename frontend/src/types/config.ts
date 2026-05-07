@@ -10,17 +10,10 @@ export type ProfundidadHumedad =
 
 export type VariableObjetivo = "TasaBuenos" | "TasaSeveros" | "MCD";
 export type TelemetryIndex = "NDVI" | "EVI" | "SAVI" | "NDWI";
-export type EspecieCultivo =
-  | "Olivo"
-  | "Almendro"
-  | "Vid"
-  | "Naranjo"
-  | "Limonero"
-  | "Mandarino"
-  | "Melocotonero"
-  | "Nectarino"
-  | "Ciruelo"
-  | "Albaricoquero";
+export type TratamientoRiego =
+  | "RiegoControl"
+  | "RiegoDeficitario"
+  | "RiegoDeficitarioSevero";
 export type TipoSuelo =
   | "CampinaArcillosa"
   | "LomasCalizasAlbariza"
@@ -38,7 +31,7 @@ export type ParcelPosition = [number, number];
 
 export interface ParcelaConfig {
   nombre: string;
-  especieCultivo: EspecieCultivo | null;
+  tratamiento: TratamientoRiego | null;
   tipoSuelo: TipoSuelo | null;
   provinciaId: string | null;
   provinciaNombre: string | null;

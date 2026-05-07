@@ -328,7 +328,7 @@ export default function DigitalSensorCreation() {
           </div>
 
           {unlockedStepIndex < 1 && (
-            <StepLockedHint text="Selecciona cultivo, tipo de suelo, provincia y municipio y pulsa Listo para desbloquear los sensores físicos." />
+            <StepLockedHint text="Selecciona tratamiento, tipo de suelo, provincia y municipio y pulsa Listo para desbloquear los sensores físicos." />
           )}
 
           {/* Paso 2: Sensores */}

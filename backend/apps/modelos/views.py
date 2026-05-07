@@ -37,32 +37,32 @@ _prediction_service = PredictionService()
 
 
 def _features_to_training_params(features: list[str]) -> tuple[list[str], list[str], str]:
-    """Derives targets, input_cols, crop purely from UVL attributes — no hardcoded mappings."""
+    """Derives targets, input_cols, treatment purely from UVL attributes — no hardcoded mappings."""
     features_set = set(features)
     target_names = set(FlamapyService.get_subtree_feature_names("VariableObjetivo"))
-    crop_names = set(FlamapyService.get_subtree_feature_names("Cultivo")) - {"Cultivo"}
+    treatment_names = set(FlamapyService.get_subtree_feature_names("Tratamiento")) - {"Tratamiento"}
 
     targets = [f for f in features_set if f in target_names]
 
     seen: set[str] = set()
     input_cols: list[str] = []
     for feature_name in features_set:
-        if feature_name in target_names or feature_name in crop_names:
+        if feature_name in target_names or feature_name in treatment_names:
             continue
         for col in FlamapyService.get_csv_columns(feature_name):
             if col not in seen:
                 seen.add(col)
                 input_cols.append(col)
 
-    crop = next((f for f in features_set if f in crop_names), "")
-    return targets, input_cols, crop
+    treatment = next((f for f in features_set if f in treatment_names), "")
+    return targets, input_cols, treatment
 
 
 def _metadata_from_db(record: ModeloGuardado) -> dict:
     return {
         "model_id": record.model_id,
         "algorithm": record.algorithm,
-        "crop": record.crop,
+        "treatment": record.treatment,
         "features": record.features,
         "geo": record.geo,
         "all_cols": record.all_cols,
@@ -143,7 +143,7 @@ def train_model(request):
             return Response({"detail": "El campo 'geo' debe ser un objeto JSON."}, status=400)
 
     try:
-        targets, input_cols, crop = _features_to_training_params(features)
+        targets, input_cols, treatment = _features_to_training_params(features)
     except RuntimeError as exc:
         return Response({"detail": str(exc)}, status=503)
 
@@ -151,7 +151,7 @@ def train_model(request):
 
     try:
         model_id = _training_service.start_training(
-            targets, input_cols, crop, csv_content, features=features, geo=geo, user_id=request.user.pk
+            targets, input_cols, treatment, csv_content, features=features, geo=geo, user_id=request.user.pk
         )
     except ModelosServiceError as exc:
         return Response({"detail": str(exc)}, status=400)
@@ -286,7 +286,7 @@ def import_model(request):
         defaults={
             "user": request.user,
             "algorithm": metadata.get("algorithm", ""),
-            "crop": metadata.get("crop", ""),
+            "treatment": metadata.get("treatment") or metadata.get("crop", ""),
             "features": metadata.get("features", []),
             "geo": metadata.get("geo", {}),
             "targets": metadata.get("targets", []),

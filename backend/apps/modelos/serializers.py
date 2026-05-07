@@ -32,7 +32,7 @@ class TrainingStatusSerializer(serializers.Serializer):
 class ModelMetadataSerializer(serializers.Serializer):
     model_id = serializers.CharField()
     algorithm = serializers.CharField()
-    crop = serializers.CharField()
+    treatment = serializers.CharField()
     features = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     geo = serializers.DictField(required=False, default=dict)
     all_cols = serializers.ListField(child=serializers.CharField())

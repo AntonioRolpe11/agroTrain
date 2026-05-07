@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in agriculture. The UVL feature model (`agroTrain.uvl`) is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
+**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in olive agriculture. The UVL feature model (`agroTrain.uvl`) is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
 
-Users configure a parcel (crop, soil type, location, geometry) and select sensor parameters via a step-by-step wizard. The system then:
+Users configure an olive parcel (irrigation treatment, soil type, location, geometry) and select sensor parameters via a step-by-step wizard. The system then:
 1. Validates the configuration against the UVL using Flamapy (BDD satisfiability).
 2. Optionally extracts vegetation indices (NDVI, EVI, SAVI, NDWI) from Sentinel-2 via Google Earth Engine.
 3. Accepts sensor CSV files, fuses them with telemetry, and trains ML models (LSTM / GradientBoosting) to predict target variables.
@@ -65,7 +65,7 @@ The UVL file is the core of the system. Every feature node can carry custom attr
 | `wizard_step` | Backend + frontend scope derivation | Which wizard step owns this subtree (`parcel`, `sensors`, `telemetry`, `objective`) |
 | `csv_col` | Backend training, frontend CSV validation | Single CSV column name this feature maps to |
 | `csv_cols` | Backend training, frontend CSV validation | Comma-separated CSV column names (e.g. `'tmax,tmin'`) |
-| `window_size` | Backend LSTM/GB training | Lag window in days for this crop |
+| `window_size` | Backend LSTM/GB training | Lag window in days for this treatment |
 | `preferred_algorithm` | Backend training | `'LSTM'` or `'GradientBoosting'` |
 | `min_samples` | Backend training | Minimum CSV rows to use LSTM; falls back to GradientBoosting below this |
 | `min_reject` | Frontend Results.tsx | Row count below which training is blocked |
@@ -74,9 +74,9 @@ The UVL file is the core of the system. Every feature node can carry custom attr
 | `quality_min` | Backend training_service | Minimum acceptable R² for this objective variable |
 | `quality_good` | Backend training_service | Good R² threshold for this objective variable |
 
-### Adding a new crop
+### Adding a new irrigation treatment
 
-Add a child under `Cultivo` with all crop attributes, and add the appropriate humidity-depth constraint. No Python or TypeScript changes required.
+Add a child under `Tratamiento` with all treatment attributes, and add the appropriate humidity-depth constraint. No Python or TypeScript changes required.
 
 ### Adding a new sensor
 
@@ -114,7 +114,7 @@ The component reads `attributes.label` for display names. Selection state lives 
 
 | Step | Component | Scope | Unlocks after |
 |---|---|---|---|
-| 0 — Parcela | `ParcelDataCard` | `DatosParcela` subtree | Crop + soil + province + municipality |
+| 0 — Parcela | `ParcelDataCard` | `DatosParcela` subtree | Treatment + soil + province + municipality |
 | 1 — Sensores | `StepSensores` | `ParametrosEntrada` subtree | Server validation pass |
 | 2 — Telemetría | `StepTelemetria` | `DatosTelemetria` subtree | Server validation pass |
 | 3 — Objetivo | `StepObjetivo` | `VariableObjetivo` subtree | Server validation + generate |
@@ -172,23 +172,23 @@ At startup, traverses the UVL tree looking for `wizard_step` attributes. When fo
 
 ```python
 target_names = FlamapyService.get_subtree_feature_names("VariableObjetivo")
-crop_names   = FlamapyService.get_subtree_feature_names("Cultivo")
+treatment_names = FlamapyService.get_subtree_feature_names("Tratamiento")
 
 targets    = [f for f in features if f in target_names]
 # Convention: target feature name == CSV column name (e.g. TasaBuenos → column 'TasaBuenos')
 
 input_cols = []
 for feature in features:
-    if feature not in targets and feature not in crops:
+    if feature not in targets and feature not in treatment_names:
         input_cols += FlamapyService.get_csv_columns(feature)
 # get_csv_columns reads csv_col / csv_cols UVL attributes
 
-crop = first feature in features that is in crop_names
+treatment = first feature in features that is in treatment_names
 ```
 
-### 2. Algorithm selection (from UVL crop attributes)
+### 2. Algorithm selection (from UVL treatment attributes)
 
-`FlamapyService.get_crop_profile(crop_name)` reads `window_size`, `preferred_algorithm`, `min_samples` from the UVL crop feature node's attributes. No `crop_profiles.py` file exists — it was deleted in the SPL refactor.
+`FlamapyService.get_treatment_profile(treatment_name)` reads `window_size`, `preferred_algorithm`, `min_samples` from the UVL treatment feature node's attributes. No hardcoded profile file exists — this comes from UVL attributes.
 
 ### 3. Quality thresholds (from UVL objective attributes)
 
@@ -199,7 +199,7 @@ crop = first feature in features that is in crop_names
 Fallback chain in `training_service.py`:
 
 ```
-preferred = UVL crop attribute preferred_algorithm
+preferred = UVL treatment attribute preferred_algorithm
 if preferred == "LSTM":
     if TensorFlow not installed  →  GradientBoosting + warning
     elif n_joint < min_samples   →  GradientBoosting + warning
@@ -228,7 +228,7 @@ else                             →  GradientBoosting
 - Features added before 80/20 split; per-target `scaler_{target}.pkl` fitted on train only
 - One model per target
 
-**RandomForest** (`RandomForestRegressor`, params: `n_estimators=300, max_features='sqrt', min_samples_split=4, min_samples_leaf=2`): code path exists but no UVL crop currently uses it.
+**RandomForest** (`RandomForestRegressor`, params: `n_estimators=300, max_features='sqrt', min_samples_split=4, min_samples_leaf=2`): code path exists but no UVL treatment currently uses it.
 
 ### 6. Storage structure
 
@@ -297,7 +297,7 @@ Prerequisites: model must have `geo.punto` (validated on page load).
 
 - **`buildCsvColumnInfo(model, "DatosTelemetria")`** → aliases + dataColumns for telemetry CSV parsing. NDVI/EVI/SAVI/NDWI derived automatically; adding a new index to UVL picks it up with no code change.
 - **`collectCsvFeatures(model, features, HARDCODED_SENSOR_IDS)`** → list of `{featureName, csvCol, label}` for all active sensors in `ParametrosEntrada` that aren't hardcoded (humedad depths, pluviómetro, future sensors). Renders a `SensorFileCard` upload for each automatically.
-- **`buildCropTrainingThresholds(model)`** → `min_reject / min_warn / min_good` per crop from UVL attributes. Controls the training data quality indicator.
+- **`buildTreatmentTrainingThresholds(model)`** → `min_reject / min_warn / min_good` per treatment from UVL attributes. Controls the training data quality indicator.
 - **`buildAccumulatedScope` / `buildLabelMap`** → used in step components for constraint hints.
 
 ### Hardcoded sensor handling (legitimately, by design)
@@ -323,7 +323,7 @@ Prerequisites: model must have `geo.punto` (validated on page load).
 
 ### Everything else is UVL-driven
 
-Crop names, soil names, sensor names, objective variables, telemetry indices, CSV column mappings, algorithm parameters, quality thresholds, training data thresholds, constraint messages, wizard scope, constraint hints — all derived at runtime from `agroTrain.uvl`.
+Treatment names, soil names, sensor names, objective variables, telemetry indices, CSV column mappings, algorithm parameters, quality thresholds, training data thresholds, constraint messages, wizard scope, constraint hints — all derived at runtime from `agroTrain.uvl`.
 
 ---
 
@@ -355,11 +355,11 @@ apps/
 - `validate_features(features, is_full, step)` — step-aware BDD validation
 - `get_subtree_feature_names(parent)` — all feature names under a node
 - `get_csv_columns(feature)` — csv_col/csv_cols for a feature
-- `get_crop_profile(crop)` — window_size, preferred_algorithm, min_samples from UVL
+- `get_treatment_profile(treatment)` — window_size, preferred_algorithm, min_samples from UVL
 - `get_quality_thresholds(target)` — quality_min, quality_good from UVL
 - `to_dict()` — full feature tree serialised to JSON with constraints
 
-**modelos / training flow**: `start_training` spawns daemon thread → `_run_pipeline` → reads crop profile from UVL → loads CSV → selects algorithm (LSTM / GradientBoosting) → trains per-target model → saves via `StorageService`. Status polled via in-memory `_registry`. Models stored as UUID-named dirs under `backend/model_storage/` with `metadata.json` + `.pkl` / `.keras` artifacts.
+**modelos / training flow**: `start_training` spawns daemon thread → `_run_pipeline` → reads treatment profile from UVL → loads CSV → selects algorithm (LSTM / GradientBoosting) → trains per-target model → saves via `StorageService`. Status polled via in-memory `_registry`. Models stored as UUID-named dirs under `backend/model_storage/` with `metadata.json` + `.pkl` / `.keras` artifacts.
 
 **modelos / inference flow**: `prediction_service.py` loads artifacts from disk → reconstructs feature set from `metadata.json` → runs one-step-ahead inference → saves `PrediccionModelo` DB record → returns predictions dict.
 
@@ -410,7 +410,7 @@ services/
   modelosApi.ts                   # Modelos endpoints
 utils/
   featureModel.ts                 # buildLabelMap, buildAccumulatedScope, collectCsvFeatures,
-                                  # buildCsvColumnInfo, buildCropTrainingThresholds
+                                  # buildCsvColumnInfo, buildTreatmentTrainingThresholds
   constraintEvaluator.ts          # evalAST, getViolations, getIncomingRequirements,
                                   # formatConstraintAST, collectASTFeatures
 lib/
@@ -473,7 +473,7 @@ Dev: backend `http://localhost:8000`, frontend `http://localhost:8080`. Frontend
 pip install -r backend/requirements/development.txt
 ```
 
-Flamapy requires Python < 3.13 (PySAT does not support 3.13+). TensorFlow is optional — if absent, all crops fall back to GradientBoosting regardless of UVL `preferred_algorithm`.
+Flamapy requires Python < 3.13 (PySAT does not support 3.13+). TensorFlow is optional — if absent, all treatments fall back to GradientBoosting regardless of UVL `preferred_algorithm`.
 
 ---
 

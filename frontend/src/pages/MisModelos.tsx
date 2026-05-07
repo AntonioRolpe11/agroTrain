@@ -54,7 +54,7 @@ export default function MisModelos() {
   const models = data?.models ?? [];
 
   async function handleDelete(m: ModelMetadata) {
-    if (!confirm(`¿Eliminar el modelo "${m.crop} — ${m.targets.join(", ")}"?`)) return;
+    if (!confirm(`¿Eliminar el modelo "${m.treatment} — ${m.targets.join(", ")}"?`)) return;
     setDeletingId(m.model_id);
     try {
       await deleteMut.mutateAsync(m.model_id);
@@ -108,7 +108,7 @@ export default function MisModelos() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
-                <th className="px-4 py-3">Cultivo</th>
+                <th className="px-4 py-3">Tratamiento</th>
                 <th className="px-4 py-3">Algoritmo</th>
                 <th className="px-4 py-3">Objetivos</th>
                 <th className="px-4 py-3">Métricas</th>
@@ -123,7 +123,7 @@ export default function MisModelos() {
                   key={m.model_id}
                   className={`border-b border-border last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}
                 >
-                  <td className="px-4 py-3 font-medium">{m.crop}</td>
+                  <td className="px-4 py-3 font-medium">{m.treatment}</td>
                   <td className="px-4 py-3">
                     <span className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
                       {m.algorithm}

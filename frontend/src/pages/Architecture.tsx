@@ -70,7 +70,7 @@ export default function Architecture() {
           <div className="bg-muted/50 rounded-lg p-5 font-mono text-xs leading-relaxed">
             <div className="text-olive font-semibold mb-2">Entrada</div>
             <div className="ml-4 space-y-1">
-              <div>├── DatosParcela (Cultivo | TipoSuelo)</div>
+              <div>├── DatosParcela (Tratamiento | TipoSuelo)</div>
               <div>├── ParametrosEntrada</div>
               <div className="ml-6">├── Dendrometro (opcional: DatoMCD, DatoTB, DatoTS)</div>
               <div className="ml-6">└── HumedadSuelo (Hd05–Hd75) · TemperaturaAire</div>

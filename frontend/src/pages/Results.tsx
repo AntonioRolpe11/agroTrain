@@ -48,7 +48,7 @@ import {
 import { mergeSensorFiles, type MergedSensorResult, type SensorFileInput } from "@/lib/sensorMerger";
 import { calculateDendroParams } from "@/lib/dendroCalc";
 import type { TargetMetrics } from "@/types/api";
-import { getNode, getRelationChildren, buildCsvColumnInfo, buildCropTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
+import { getNode, getRelationChildren, buildCsvColumnInfo, buildTreatmentTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
 
 const HARDCODED_SENSOR_IDS = new Set(["DatoMCD", "DatoTB", "DatoTS", "TemperaturaAire"]);
 
@@ -112,12 +112,12 @@ export default function Results() {
   const model = featureModelQuery.data ?? null;
 
   // Derive config from features + model
-  const cultivoNode = model ? getNode(model, "Cultivo") : null;
-  const selectedCropNode = cultivoNode
-    ? getRelationChildren(cultivoNode).find((c) => features.includes(c.name))
+  const tratamientoNode = model ? getNode(model, "Tratamiento") : null;
+  const selectedTreatmentNode = tratamientoNode
+    ? getRelationChildren(tratamientoNode).find((c) => features.includes(c.name))
     : null;
-  const cropName = selectedCropNode?.name ?? null;
-  const cropLabel = (selectedCropNode?.attributes?.label as string | undefined) ?? cropName ?? "No seleccionado";
+  const treatmentName = selectedTreatmentNode?.name ?? null;
+  const treatmentLabel = (selectedTreatmentNode?.attributes?.label as string | undefined) ?? treatmentName ?? "No seleccionado";
 
   const sueloNode = model ? getNode(model, "TipoSuelo") : null;
   const selectedSueloNode = sueloNode
@@ -153,11 +153,11 @@ export default function Results() {
     [telemetryColumnInfo],
   );
 
-  const cropThresholds = useMemo(
-    () => (model ? buildCropTrainingThresholds(model) : {}),
+  const treatmentThresholds = useMemo(
+    () => (model ? buildTreatmentTrainingThresholds(model) : {}),
     [model],
   );
-  const activeCropThreshold = (cropName ? cropThresholds[cropName] : null) ?? DEFAULT_THRESHOLD;
+  const activeTreatmentThreshold = (treatmentName ? treatmentThresholds[treatmentName] : null) ?? DEFAULT_THRESHOLD;
 
   const selectedTelemetry = telemetryColumnInfo.dataColumns.filter((col) => features.includes(col));
 
@@ -246,7 +246,7 @@ export default function Results() {
   const telemetrySource = telemetryCsv && telemetryCsv.errors.length === 0 ? "csv" : extractedTelemetry ? "gee" : null;
   const canFuse = allSensorFilesReady && telemetrySource !== null && selectedTelemetry.length > 0;
 
-  const fusedDataLevel = fusionResult ? getTrainingDataLevel(fusionResult.rowCount, activeCropThreshold) : "reject";
+  const fusedDataLevel = fusionResult ? getTrainingDataLevel(fusionResult.rowCount, activeTreatmentThreshold) : "reject";
   const isPollingTraining = trainingStatus.data?.status === "training";
   const canTrain = fusionResult !== null && fusedDataLevel !== "reject" && !trainMutation.isPending && !isPollingTraining && !activeModelId;
 
@@ -494,8 +494,8 @@ export default function Results() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Cultivo</span>
-                  <p className="font-medium">{cropLabel}</p>
+                  <span className="text-muted-foreground">Tratamiento</span>
+                  <p className="font-medium">{treatmentLabel}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Tipo de suelo</span>
@@ -527,17 +527,17 @@ export default function Results() {
                   </div>
                 </div>
               </div>
-              {selectedCropNode?.attributes?.preferred_algorithm && (
+              {selectedTreatmentNode?.attributes?.preferred_algorithm && (
                 <div className="border-t border-border/60 pt-3 text-sm">
                   <span className="text-muted-foreground">Algoritmo preferido</span>
                   <p className="mt-0.5 font-medium">
-                    {String(selectedCropNode.attributes.preferred_algorithm)}
-                    {selectedCropNode.attributes.window_size && (
-                      <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(selectedCropNode.attributes.window_size)} días</span>
+                    {String(selectedTreatmentNode.attributes.preferred_algorithm)}
+                    {selectedTreatmentNode.attributes.window_size && (
+                      <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(selectedTreatmentNode.attributes.window_size)} días</span>
                     )}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Algoritmo de referencia para este cultivo. El sistema puede usar GradientBoosting si el volumen de datos es insuficiente para LSTM.
+                    Algoritmo de referencia para este tratamiento. El sistema puede usar GradientBoosting si el volumen de datos es insuficiente para LSTM.
                   </p>
                 </div>
               )}
@@ -723,7 +723,7 @@ export default function Results() {
                   <div className="rounded-lg border border-border bg-muted/20 p-3"><p className="text-muted-foreground">Interpoladas / clampeadas</p><p className="mt-1 font-medium">{fusionResult.interpolatedCount}</p></div>
                 </div>
                 {(() => {
-                  const t = activeCropThreshold;
+                  const t = activeTreatmentThreshold;
                   if (fusedDataLevel === "reject") return (
                     <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
                       <p className="font-semibold">Datos insuficientes para entrenar</p>

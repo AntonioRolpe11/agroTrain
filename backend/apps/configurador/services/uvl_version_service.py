@@ -14,7 +14,7 @@ from .uvl_serializer import to_uvl
 logger = logging.getLogger(__name__)
 
 REQUIRED_WIZARD_STEPS = set(PARTIAL_STEP_ORDER) - {"full"}
-REQUIRED_ROOT_NODES = {"VariableObjetivo", "Cultivo", "ParametrosEntrada", "DatosTelemetria"}
+REQUIRED_ROOT_NODES = {"VariableObjetivo", "Tratamiento", "ParametrosEntrada", "DatosTelemetria"}
 
 
 def _sha256(text: str) -> str:

@@ -235,7 +235,7 @@ export default function GenerarValorModelo() {
       <div className="mb-8">
         <h1 className="text-2xl font-serif font-semibold">Generar valor</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Modelo {model.model_id.slice(0, 8)} · {model.crop} · {model.algorithm}. Carga al menos {model.window_size} días completos para cubrir la ventana temporal.
+          Modelo {model.model_id.slice(0, 8)} · {model.treatment} · {model.algorithm}. Carga al menos {model.window_size} días completos para cubrir la ventana temporal.
         </p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {model.targets.map((t) => <span key={t} className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 font-semibold text-primary">{t}</span>)}

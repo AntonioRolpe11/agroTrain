@@ -35,7 +35,7 @@ export function ParcelDataCard({ footer, serverErrors = [] }: ParcelDataCardProp
         : null;
 
   const model = featureModelQuery.data ?? null;
-  const cultivoNode = model ? getNode(model, "Cultivo") : null;
+  const tratamientoNode = model ? getNode(model, "Tratamiento") : null;
   const tipoSueloNode = model ? getNode(model, "TipoSuelo") : null;
 
   return (
@@ -111,11 +111,11 @@ export function ParcelDataCard({ footer, serverErrors = [] }: ParcelDataCardProp
 
       {catalogError && <p className="mt-4 text-sm text-destructive">{catalogError}</p>}
 
-      {(cultivoNode || tipoSueloNode) && (
+      {(tratamientoNode || tipoSueloNode) && (
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           <div>
-            <Label className="mb-2 block text-sm font-semibold">Especie de cultivo</Label>
-            {cultivoNode && <FeatureNode node={cultivoNode} index={0} />}
+            <Label className="mb-2 block text-sm font-semibold">Tratamiento de riego</Label>
+            {tratamientoNode && <FeatureNode node={tratamientoNode} index={0} />}
           </div>
           <div>
             <Label className="mb-2 block text-sm font-semibold">Tipo de suelo</Label>

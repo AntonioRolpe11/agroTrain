@@ -1,4 +1,4 @@
-# Generación de modelos predictivos y generación de valores en agroTrain2
+﻿# Generación de modelos predictivos y generación de valores en agroTrain2
 
 ## 1. Introducción
 
@@ -6,7 +6,7 @@ El módulo de modelos de **agroTrain2** constituye la parte predictiva del siste
 
 Desde el punto de vista de la memoria del TFG, este módulo es relevante porque integra tres ideas principales:
 
-1. **Configuración dirigida por una línea de producto software (SPL)**: las variables disponibles, sensores, cultivos, restricciones y parámetros de entrenamiento no se definen de forma aislada en el código, sino que se derivan del modelo de características UVL.
+1. **Configuración dirigida por una línea de producto software (SPL)**: las variables disponibles, sensores, Tratamientos, restricciones y parámetros de entrenamiento no se definen de forma aislada en el código, sino que se derivan del modelo de características UVL.
 2. **Entrenamiento automático de modelos de aprendizaje automático**: el sistema decide cómo construir el conjunto de entrenamiento y qué algoritmo aplicar en función de la configuración seleccionada y de la cantidad de datos disponible.
 3. **Reutilización operacional del modelo**: una vez entrenado, el modelo queda persistido, se muestra en la pantalla “Mis modelos” y puede utilizarse para generar valores futuros de la variable objetivo.
 
@@ -15,7 +15,7 @@ El flujo completo puede resumirse así:
 ```text
 Configuración UVL
       ↓
-Selección de cultivo, sensores, telemetría y variable objetivo
+Selección de Tratamiento, sensores, telemetría y variable objetivo
       ↓
 Carga y fusión de CSV de sensores + datos GEE
       ↓
@@ -38,7 +38,7 @@ agroTrain2 se apoya en un modelo de características UVL como fuente de verdad d
 
 En términos prácticos, cuando el usuario finaliza el configurador, el frontend dispone de una lista de *features* activas. Esa lista contiene información como:
 
-- cultivo seleccionado;
+- Tratamiento seleccionado;
 - tipo de suelo;
 - sensores de entrada;
 - índices de telemetría;
@@ -51,28 +51,28 @@ El backend recibe esas *features* y las transforma en parámetros de entrenamien
 def _features_to_training_params(features: list[str]) -> tuple[list[str], list[str], str]:
     features_set = set(features)
     target_names = set(FlamapyService.get_subtree_feature_names("VariableObjetivo"))
-    crop_names = set(FlamapyService.get_subtree_feature_names("Cultivo")) - {"Cultivo"}
+    treatment_names = set(FlamapyService.get_subtree_feature_names("Tratamiento")) - {"Tratamiento"}
 
     targets = [f for f in features_set if f in target_names]
 
     seen: set[str] = set()
     input_cols: list[str] = []
     for feature_name in features_set:
-        if feature_name in target_names or feature_name in crop_names:
+        if feature_name in target_names or feature_name in treatment_names:
             continue
         for col in FlamapyService.get_csv_columns(feature_name):
             if col not in seen:
                 seen.add(col)
                 input_cols.append(col)
 
-    crop = next((f for f in features_set if f in crop_names), "")
-    return targets, input_cols, crop
+    treatment = next((f for f in features_set if f in treatment_names), "")
+    return targets, input_cols, treatment
 ```
 
 La función realiza tres operaciones fundamentales:
 
 1. Obtiene las variables objetivo desde el subárbol `VariableObjetivo`.
-2. Obtiene el cultivo desde el subárbol `Cultivo`.
+2. Obtiene el Tratamiento desde el subárbol `Tratamiento`.
 3. Convierte las *features* de entrada en columnas reales de CSV usando los atributos `csv_col` y `csv_cols` del UVL.
 
 Esta decisión reduce el acoplamiento entre el código y el dominio agrícola. Por ejemplo, si en el futuro se añade un nuevo sensor al UVL con su atributo `csv_col`, el backend puede incorporarlo al entrenamiento sin modificar manualmente una lista de columnas en Python.
@@ -138,12 +138,12 @@ La petición se envía como `multipart/form-data` e incluye:
 La vista `train_model` valida la entrada, deriva los parámetros del entrenamiento y delega en `TrainingService`:
 
 ```python
-targets, input_cols, crop = _features_to_training_params(features)
+targets, input_cols, treatment = _features_to_training_params(features)
 
 model_id = _training_service.start_training(
     targets,
     input_cols,
-    crop,
+    treatment,
     csv_content,
     features=features,
     geo=geo,
@@ -199,7 +199,7 @@ Esta separación entre inicio del entrenamiento y consulta del estado mejora la 
 
 ## 4. Selección del algoritmo de entrenamiento
 
-El backend implementa una selección automática del algoritmo. La preferencia inicial se obtiene del perfil del cultivo, definido en el UVL mediante atributos como:
+El backend implementa una selección automática del algoritmo. La preferencia inicial se obtiene del perfil del Tratamiento, definido en el UVL mediante atributos como:
 
 - `window_size`;
 - `preferred_algorithm`;
@@ -208,7 +208,7 @@ El backend implementa una selección automática del algoritmo. La preferencia i
 En el servicio de entrenamiento se recuperan así:
 
 ```python
-profile = FlamapyService.get_crop_profile(crop)
+profile = FlamapyService.get_treatment_profile(treatment)
 window_size = profile["window_size"]
 preferred = profile["preferred_algorithm"]
 min_samples = profile["min_samples"]
@@ -228,19 +228,19 @@ if preferred == "LSTM":
         algorithm = "GradientBoosting"
         
     if algorithm == "LSTM":
-            self._train_lstm(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, features or [], geo or {})
+            self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {})
         else:
-            self._train_sklearn(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, algorithm, features or [], geo or {})
+            self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {})
 
         self._create_db_record(model_id, user_id)
 ```
 
 Es decir:
 
-1. Si el cultivo prefiere LSTM y hay TensorFlow disponible, se intenta usar LSTM.
+1. Si el Tratamiento prefiere LSTM y hay TensorFlow disponible, se intenta usar LSTM.
 2. Si TensorFlow no está instalado o no puede importarse, se utiliza GradientBoosting.
 3. Si el número de filas completas es inferior al mínimo requerido, también se usa GradientBoosting.
-4. Si el cultivo ya prefiere GradientBoosting, se usa directamente ese algoritmo.
+4. Si el Tratamiento ya prefiere GradientBoosting, se usa directamente ese algoritmo.
 
 Esta decisión tiene una justificación técnica. Los modelos LSTM son adecuados para series temporales, pero requieren más datos para generalizar correctamente. Cuando el conjunto de datos es pequeño, un modelo basado en árboles con variables temporales explícitas suele ser más robusto y menos propenso al sobreajuste.
 
@@ -250,7 +250,7 @@ Esta decisión tiene una justificación técnica. Los modelos LSTM son adecuados
 
 ### 5.1. Motivación
 
-Las redes LSTM (*Long Short-Term Memory*) son un tipo de red neuronal recurrente diseñada para trabajar con secuencias. En este proyecto se emplean cuando el cultivo seleccionado requiere capturar dependencias temporales entre días consecutivos.
+Las redes LSTM (*Long Short-Term Memory*) son un tipo de red neuronal recurrente diseñada para trabajar con secuencias. En este proyecto se emplean cuando el Tratamiento seleccionado requiere capturar dependencias temporales entre días consecutivos.
 
 La idea principal es que la predicción de la variable objetivo no depende únicamente del valor actual de los sensores, sino también de su evolución reciente.
 
@@ -277,7 +277,7 @@ El entrenamiento LSTM comienza limpiando filas incompletas:
 df_clean = df[all_cols].dropna().reset_index(drop=True)
 ```
 
-Después se divide el conjunto en entrenamiento y validación:
+Después se diRiegoDeficitarioSeveroe el conjunto en entrenamiento y validación:
 
 ```python
 n = len(df_clean)
@@ -317,7 +317,7 @@ Cada ventana contiene `window_size` filas consecutivas y todas las columnas de e
 
 ### 5.3. Arquitectura de la red
 
-La arquitectura implementada es compacta y adecuada para un TFG, ya que equilibra expresividad y coste computacional:
+La arquitectura implementada es compacta y adecuada para un TFG, ya que equilibra expresiRiegoDeficitarioSeveroad y coste computacional:
 
 ```python
 inp = Input(shape=(window_size, len(all_cols)))
@@ -501,8 +501,8 @@ El fichero `metadata.json` contiene información necesaria para reutilizar el mo
 {
   "model_id": "...",
   "algorithm": "GradientBoosting",
-  "crop": "Olivo",
-  "features": ["Olivo", "NDVI", "TasaBuenos"],
+  "treatment": "RiegoControl",
+  "features": ["RiegoControl", "NDVI", "TasaBuenos"],
   "geo": { "punto": { "lat": 37.0, "lng": -4.0 } },
   "all_cols": ["TasaBuenos", "NDVI"],
   "targets": ["TasaBuenos"],
@@ -528,7 +528,7 @@ class ModeloGuardado(models.Model):
     model_id = models.CharField(max_length=36, unique=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, ...)
     algorithm = models.CharField(max_length=50)
-    crop = models.CharField(max_length=100)
+    treatment = models.CharField(max_length=100)
     features = models.JSONField(default=list)
     geo = models.JSONField(default=dict)
     targets = models.JSONField()
@@ -824,7 +824,7 @@ La separación facilita el mantenimiento del sistema y permite evolucionar cada 
 La generación de modelos depende del UVL para conocer:
 
 - variables objetivo;
-- cultivos;
+- Tratamientos;
 - columnas CSV;
 - tamaño de ventana;
 - algoritmo preferido;
@@ -879,4 +879,5 @@ Desde una perspectiva arquitectónica, la solución aporta:
 - **adaptabilidad**, porque la configuración UVL reduce el hardcoding de conocimiento de dominio;
 - **robustez operativa**, porque el sistema contempla métricas, avisos, fallback de algoritmo y validaciones en backend.
 
-Por todo ello, el módulo no se limita a entrenar un modelo aislado, sino que implementa un ciclo completo de vida de un sensor digital predictivo: configuración, entrenamiento, evaluación, persistencia, reutilización e inferencia.
+Por todo ello, el módulo no se limita a entrenar un modelo aislado, sino que implementa un ciclo completo de RiegoDeficitarioSeveroa de un sensor digital predictivo: configuración, entrenamiento, evaluación, persistencia, reutilización e inferencia.
+
