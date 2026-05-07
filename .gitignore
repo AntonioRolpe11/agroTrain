@@ -39,7 +39,9 @@ eeproject-*.json
 backend/secrets/
 
 # Versiones UVL auto-generadas en runtime
-backend/uvl_versions/
+backend/uvl_versions/*
+!backend/uvl_versions/
+!backend/uvl_versions/v2_olivos_tratamientos.uvl
 
 # Configuración interna Claude Code
 .claude/
