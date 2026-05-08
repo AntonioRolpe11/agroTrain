@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { StatusTag } from "@/components/ui/StatusTag";
 import type { FeatureModelNode, UVLPreviewActivationReport, UVLVersionSummary } from "@/types/api";
 import { uvlApi } from "@/services/uvlApi";
+import { featureModelQueryKey } from "@/hooks/useConfiguratorApi";
 
 // ── section definitions ───────────────────────────────────────────────────────
 
@@ -44,7 +45,6 @@ const SECTIONS: SectionDef[] = [
     attrFields: [
       { key: "label", label: "Etiqueta", type: "text" },
       { key: "window_size", label: "Ventana (días)", type: "number", required: true },
-      { key: "preferred_algorithm", label: "Algoritmo", type: "select", options: ["LSTM", "GradientBoosting"], required: true },
       { key: "min_samples", label: "Min muestras LSTM", type: "number", required: true },
       { key: "min_reject", label: "min_reject", type: "number", required: true },
       { key: "min_warn", label: "min_warn", type: "number", required: true },
@@ -98,6 +98,8 @@ const SECTIONS: SectionDef[] = [
       { key: "label", label: "Etiqueta", type: "text" },
       { key: "quality_min", label: "R² mínimo", type: "number", required: true },
       { key: "quality_good", label: "R² bueno", type: "number", required: true },
+      { key: "preferred_algorithm", label: "Algoritmo", type: "select", options: ["LSTM", "RandomForest", "GradientBoosting"], required: true },
+      { key: "window_size_override", label: "Ventana override (días)", type: "number" },
     ],
   },
 ];
@@ -221,6 +223,7 @@ function useActivateVersion() {
       uvlApi.activateVersion(id, confirm),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: VERSIONS_KEY });
+      void qc.invalidateQueries({ queryKey: featureModelQueryKey });
       toast.success(data.detail);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Error al activar versión."),

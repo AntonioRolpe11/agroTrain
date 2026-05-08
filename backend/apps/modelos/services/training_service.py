@@ -38,7 +38,7 @@ try:
 
 except ImportError:
     TF_AVAILABLE = False
-    logger.warning("TensorFlow no disponible — se usará GradientBoosting.")
+    logger.warning("TensorFlow no disponible — se usará RandomForest.")
 
 _registry: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -133,8 +133,17 @@ class TrainingService:
             raise ModelosServiceError(f"Columnas ausentes en CSV: {missing}")
 
         profile = FlamapyService.get_treatment_profile(treatment)
-        window_size: int = profile["window_size"]
-        preferred: str = profile["preferred_algorithm"]
+        # Per-target overrides (preferred_algorithm, window_size_override).
+        # Empirically validated in docs/experimentacion_modelos.md: el algoritmo y la
+        # ventana óptimos dependen del target, no del tratamiento de riego.
+        target_profiles = [FlamapyService.get_target_profile(t) for t in targets]
+        target_profile: dict = {}
+        for tp in target_profiles:
+            for key, value in tp.items():
+                target_profile.setdefault(key, value)
+
+        window_size: int = int(target_profile.get("window_size", profile["window_size"]))
+        preferred: str = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
         min_samples: int = profile["min_samples"]
 
         input_features = [c for c in input_cols if c not in set(targets)]
@@ -145,15 +154,15 @@ class TrainingService:
 
         if preferred == "LSTM":
             if not TF_AVAILABLE:
-                algorithm = "GradientBoosting"
+                algorithm = "RandomForest"
                 warnings.append(
-                    "TensorFlow no disponible; se ha utilizado GradientBoosting."
+                    "TensorFlow no disponible; se ha utilizado RandomForest."
                 )
             elif n_joint < min_samples:
-                algorithm = "GradientBoosting"
+                algorithm = "RandomForest"
                 warnings.append(
                     f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {min_samples}). "
-                    "Se ha utilizado GradientBoosting con características temporales."
+                    "Se ha utilizado RandomForest con características temporales."
                 )
 
         if algorithm == "LSTM":
@@ -417,9 +426,13 @@ class TrainingService:
 # ------------------------------------------------------------------ helpers
 
 def _build_rf() -> RandomForestRegressor:
+    # Hiperparámetros calibrados empíricamente en la fase de experimentación
+    # (docs/experimentacion_modelos.md). Los ganadores RandomForest del experimento
+    # suelen usar n_estimators ≥ 400, max_depth ∈ {None, 20}, max_features cercano a 1.0.
     return RandomForestRegressor(
-        n_estimators=300,
-        max_features="sqrt",
+        n_estimators=600,
+        max_depth=20,
+        max_features=1.0,
         min_samples_split=4,
         min_samples_leaf=2,
         oob_score=True,
@@ -439,6 +452,14 @@ def _build_gb() -> HistGradientBoostingRegressor:
 
 
 def _add_temporal_features(df: pd.DataFrame, input_features: list[str], window_size: int) -> pd.DataFrame:
+    """
+    Añade features temporales: estacionalidad anual sin/cos, lags por feature,
+    media móvil corta y EMAs (alpha=0.3 y alpha=0.7).
+
+    Las EMAs se incorporan tras el experimento documentado en
+    docs/experimentacion_modelos.md, donde la variante 'ema' superó a 'basic' en
+    33% de los modelos sin perjudicar al resto. Coste: 2 columnas por feature.
+    """
     df = df.copy()
     day_of_year = df["date"].dt.dayofyear
     df["day_sin"] = np.sin(2 * np.pi * day_of_year / 365.0)
@@ -450,6 +471,8 @@ def _add_temporal_features(df: pd.DataFrame, input_features: list[str], window_s
         for lag in range(1, window_size + 1):
             df[f"{feat}_lag{lag}"] = df[feat].shift(lag)
         df[f"{feat}_roll{roll_w}d"] = df[feat].shift(1).rolling(roll_w).mean()
+        df[f"{feat}_ema30"] = df[feat].shift(1).ewm(alpha=0.3, adjust=False).mean()
+        df[f"{feat}_ema70"] = df[feat].shift(1).ewm(alpha=0.7, adjust=False).mean()
     return df
 
 

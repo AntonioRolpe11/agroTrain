@@ -7,16 +7,16 @@ features
 				mandatory
 					Tratamiento { label 'Tratamiento de riego' }
 						alternative
-							RiegoControl { label 'Riego control', window_size 7, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 700 }
-							RiegoDeficitario { label 'Riego deficitario', window_size 7, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 700 }
-							RiegoDeficitarioSevero { label 'Riego deficitario severo', window_size 7, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 700 }
+							RiegoControl { label 'Riego control', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700 }
+							RiegoDeficitario { label 'Riego deficitario', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700 }
+							RiegoDeficitarioSevero { label 'Riego deficitario severo', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700 }
 					TipoSuelo { label 'Tipo de suelo' }
 						alternative
-							CampinaArcillosa { label 'Campiña arcillosa / bujeo' }
-							LomasCalizasAlbariza { label 'Lomas calizas / albariza' }
-							VegaAluvial { label 'Vega o terraza aluvial' }
-							PiedemonteSierra { label 'Piedemonte / sierra' }
-							MarismasSalinas { label 'Marismas o suelos salinos' }
+							Calcisoles { label 'Suelos calizos (calcisoles)' }
+							Luvisoles { label 'Tierras rojas mediterráneas (luvisoles)' }
+							Vertisoles { label 'Bujeos o tierras negras (vertisoles)' }
+							Cambisoles { label 'Tierras pardas (cambisoles)' }
+							LeptosolesRegosoles { label 'Suelos de sierra o esqueléticos (leptosoles/regosoles)' }
 		mandatory
 			ParametrosEntrada { label 'Parámetros de entrada', wizard_step 'sensors' }
 				mandatory
@@ -37,6 +37,8 @@ features
 							Hd65 { label '65 cm', csv_col 'humedad_Hd65' }
 							Hd75 { label '75 cm', csv_col 'humedad_Hd75' }
 					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
+					Pluviometro { label 'Pluviómetro', csv_col 'pluv' }
+					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
 		mandatory
 			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
 				optional
@@ -49,9 +51,9 @@ features
 		mandatory
 			VariableObjetivo { label 'Variable objetivo', wizard_step 'objective' }
 				alternative
-					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80 }
-					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70 }
-					MCD { quality_min 0.35, quality_good 0.50 }
+					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80, preferred_algorithm 'RandomForest' }
+					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70, preferred_algorithm 'RandomForest', window_size_override 3 }
+					MCD { quality_min 0.35, quality_good 0.50, preferred_algorithm 'LSTM', window_size_override 3 }
 constraints
 	Hd05 => HumedadSuelo
 	Hd15 => HumedadSuelo
@@ -67,11 +69,14 @@ constraints
 	TasaSeveros => DatoTS
 	MCD => DatoMCD
 	NDWI => (NDVI | EVI | SAVI)
-	LomasCalizasAlbariza => (SAVI & NDWI)
-	CampinaArcillosa => (NDVI & NDWI) | (EVI & NDWI)
-	MarismasSalinas => (NDWI & EVI)
-	VegaAluvial => (NDVI) | (EVI)
-	PiedemonteSierra => (EVI & SAVI)
+	Calcisoles => (SAVI & NDWI)
+	Luvisoles => (NDVI | EVI)
+	Vertisoles => (EVI & NDWI)
+	Cambisoles => (NDVI | EVI)
+	LeptosolesRegosoles => (EVI & SAVI)
 	RiegoControl => Hd35 | Hd45 | Hd55
+	RiegoControl => Pluviometro
 	RiegoDeficitario => Hd35 | Hd45 | Hd55
+	RiegoDeficitario => DPV
 	RiegoDeficitarioSevero => Hd35 | Hd45 | Hd55
+	RiegoDeficitarioSevero => DPV

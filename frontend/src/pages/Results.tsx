@@ -527,20 +527,29 @@ export default function Results() {
                   </div>
                 </div>
               </div>
-              {selectedTreatmentNode?.attributes?.preferred_algorithm && (
-                <div className="border-t border-border/60 pt-3 text-sm">
-                  <span className="text-muted-foreground">Algoritmo preferido</span>
-                  <p className="mt-0.5 font-medium">
-                    {String(selectedTreatmentNode.attributes.preferred_algorithm)}
-                    {selectedTreatmentNode.attributes.window_size && (
-                      <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(selectedTreatmentNode.attributes.window_size)} días</span>
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Algoritmo de referencia para este tratamiento. El sistema puede usar GradientBoosting si el volumen de datos es insuficiente para LSTM.
-                  </p>
-                </div>
-              )}
+              {(() => {
+                const targetAlgo = selectedObjetivoNode?.attributes?.preferred_algorithm as string | undefined;
+                const treatmentAlgo = selectedTreatmentNode?.attributes?.preferred_algorithm as string | undefined;
+                const algo = targetAlgo ?? treatmentAlgo;
+                if (!algo) return null;
+                const targetWindow = selectedObjetivoNode?.attributes?.window_size_override;
+                const treatmentWindow = selectedTreatmentNode?.attributes?.window_size;
+                const window = targetWindow ?? treatmentWindow;
+                return (
+                  <div className="border-t border-border/60 pt-3 text-sm">
+                    <span className="text-muted-foreground">Algoritmo preferido</span>
+                    <p className="mt-0.5 font-medium">
+                      {String(algo)}
+                      {window && (
+                        <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(window)} días</span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Algoritmo asociado al objetivo. Si LSTM no es viable (TensorFlow ausente o datos insuficientes) el sistema empleará RandomForest automáticamente.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </section>

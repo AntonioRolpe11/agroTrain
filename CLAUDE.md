@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in olive agriculture. The UVL feature model (`agroTrain.uvl`) is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
+**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in olive agriculture. The active UVL feature model is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
+
+UVL versions are stored in `backend/uvl_versions/` and tracked in the DB (`UVLVersion` model). The active version is determined by `UVLVersion.objects.filter(is_active=True).first()`. `backend/agroTrain.uvl` is only used as a fallback seed when no DB versions exist yet (`seed_initial_version` in `uvl_version_service.py`). **Edit UVL files in `backend/uvl_versions/`, not `backend/agroTrain.uvl`.**
+
+When a version is activated via `UvlEditor.tsx`, the frontend invalidates both `["uvl-versions"]` and `["feature-model"]` React Query caches, so the configurator wizard reflects the new UVL immediately without a page reload.
 
 Users configure an olive parcel (irrigation treatment, soil type, location, geometry) and select sensor parameters via a step-by-step wizard. The system then:
 1. Validates the configuration against the UVL using Flamapy (BDD satisfiability).
@@ -55,7 +59,7 @@ docker compose down -v      # destroy including DB volume
 
 ---
 
-## The UVL Feature Model (`agroTrain.uvl`)
+## The UVL Feature Model (`backend/uvl_versions/`)
 
 The UVL file is the core of the system. Every feature node can carry custom attributes:
 
@@ -73,10 +77,15 @@ The UVL file is the core of the system. Every feature node can carry custom attr
 | `min_good` | Frontend Results.tsx | Row count for "good quality" indicator |
 | `quality_min` | Backend training_service | Minimum acceptable R² for this objective variable |
 | `quality_good` | Backend training_service | Good R² threshold for this objective variable |
+| `window_size_override` | Backend training_service | Overrides the treatment's `window_size` for this specific objective variable (per-target window, takes precedence) |
 
 ### Adding a new irrigation treatment
 
-Add a child under `Tratamiento` with all treatment attributes, and add the appropriate humidity-depth constraint. No Python or TypeScript changes required.
+Add a child under `Tratamiento` with all treatment attributes, and add the appropriate constraints:
+- Humidity-depth: `NuevoTratamiento => Hd35 | Hd45 | Hd55` (or whichever depths are relevant)
+- Treatment-specific mandatory sensors (pattern established in v2): `NuevoTratamiento => SensorObligatorio`
+
+Example pattern: `RiegoControl => Pluviometro`, `RiegoDeficitario => DPV`, `RiegoDeficitarioSevero => DPV`. These constraints span wizard steps (parcel → sensors); the BDD enforces them at the sensors step because the parcel step is accumulated in scope. No Python or TypeScript changes required.
 
 ### Adding a new sensor
 
@@ -199,15 +208,19 @@ treatment = first feature in features that is in treatment_names
 Fallback chain in `training_service.py`:
 
 ```
-preferred = UVL treatment attribute preferred_algorithm
+preferred = target_profile.preferred_algorithm  (overrides treatment profile if set)
+         ?? treatment_profile.preferred_algorithm
+
 if preferred == "LSTM":
-    if TensorFlow not installed  →  GradientBoosting + warning
-    elif n_joint < min_samples   →  GradientBoosting + warning
+    if TensorFlow not installed  →  RandomForest + warning
+    elif n_joint < min_samples   →  RandomForest + warning
     else                         →  LSTM
-else                             →  GradientBoosting
+else                             →  preferred (RandomForest or GradientBoosting)
 ```
 
-`n_joint` = complete rows where ALL of `targets + input_features` are non-null. Default fallbacks when UVL attributes absent: `window_size=5`, `preferred_algorithm='GradientBoosting'`, `min_samples=80`.
+`n_joint` = complete rows where ALL of `targets + input_features` are non-null. Default fallbacks when UVL attributes absent: `window_size=5`, `preferred_algorithm='RandomForest'`, `min_samples=80`.
+
+Per-target profile (`get_target_profile`) is merged over the treatment profile — target wins on `preferred_algorithm` and `window_size`. This is empirically validated in `docs/experimentacion_modelos.md`.
 
 ### 5. Training algorithms
 
@@ -228,7 +241,7 @@ else                             →  GradientBoosting
 - Features added before 80/20 split; per-target `scaler_{target}.pkl` fitted on train only
 - One model per target
 
-**RandomForest** (`RandomForestRegressor`, params: `n_estimators=300, max_features='sqrt', min_samples_split=4, min_samples_leaf=2`): code path exists but no UVL treatment currently uses it.
+**RandomForest** (`RandomForestRegressor`, params: `n_estimators=300, max_features='sqrt', min_samples_split=4, min_samples_leaf=2`): default algorithm and LSTM fallback. Used by objective variables `TasaBuenos` and `TasaSeveros` via `preferred_algorithm 'RandomForest'` on the objective feature node. Also the fallback when TensorFlow is unavailable or data is insufficient for LSTM.
 
 ### 6. Storage structure
 
@@ -357,6 +370,7 @@ apps/
 - `get_csv_columns(feature)` — csv_col/csv_cols for a feature
 - `get_treatment_profile(treatment)` — window_size, preferred_algorithm, min_samples from UVL
 - `get_quality_thresholds(target)` — quality_min, quality_good from UVL
+- `get_target_profile(target)` — per-target overrides: `preferred_algorithm` and `window_size` (from `window_size_override`); these take precedence over the treatment profile in training
 - `to_dict()` — full feature tree serialised to JSON with constraints
 
 **modelos / training flow**: `start_training` spawns daemon thread → `_run_pipeline` → reads treatment profile from UVL → loads CSV → selects algorithm (LSTM / GradientBoosting) → trains per-target model → saves via `StorageService`. Status polled via in-memory `_registry`. Models stored as UUID-named dirs under `backend/model_storage/` with `metadata.json` + `.pkl` / `.keras` artifacts.
@@ -381,8 +395,10 @@ pages/
   GenerarValorModelo.tsx          # Inference page: upload sensors → extract GEE → fuse → predict
   UserManagement.tsx              # Admin: user CRUD
   Architecture.tsx                # Feature model visualisation
+  UvlEditor.tsx                   # Admin: UVL version management (create/preview/activate/delete)
   NotFound.tsx                    # 404
 components/
+  Layout.tsx                      # App shell (navbar + outlet)
   RequireAuth.tsx                 # Protected route wrapper
   RequireAdmin.tsx                # Admin-only route wrapper
   feature-model/FeatureNode.tsx   # Recursive UVL tree renderer
@@ -408,6 +424,7 @@ services/
   api.ts                          # Base axios instance (JWT header injection)
   configuratorApi.ts              # Configurador endpoints
   modelosApi.ts                   # Modelos endpoints
+  uvlApi.ts                       # UVL versioning endpoints (list/create/validate/activate/delete)
 utils/
   featureModel.ts                 # buildLabelMap, buildAccumulatedScope, collectCsvFeatures,
                                   # buildCsvColumnInfo, buildTreatmentTrainingThresholds
@@ -429,14 +446,27 @@ types/
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/login/` | JWT login → access + refresh tokens |
-| POST | `/api/v1/auth/token/refresh/` | Refresh access token |
+| POST | `/api/v1/auth/login` | JWT login → access + refresh tokens |
+| POST | `/api/v1/auth/refresh` | Refresh access token |
+| GET | `/api/v1/auth/me` | Current user info |
 | GET/POST | `/api/v1/auth/users/` | List / create users (admin) |
 | GET/PUT/DELETE | `/api/v1/auth/users/<id>/` | User detail / edit / delete (admin) |
-| GET | `/api/v1/configurator/feature-model` | Full UVL tree as JSON |
+| GET | `/api/v1/configurator/model` | Full UVL tree as JSON |
 | POST | `/api/v1/configurator/validate-features` | Step-aware BDD validation |
-| GET | `/api/v1/geo/provinces` | Province list |
-| GET | `/api/v1/geo/municipalities/<id>` | Municipalities for province |
+| POST | `/api/v1/configurator/flamapy/satisfiable` | BDD satisfiability check (UvlEditor preview) |
+| POST | `/api/v1/configurator/flamapy/configurations-number` | Count valid configurations |
+| POST | `/api/v1/configurator/flamapy/dead-features` | List dead features |
+| GET/POST | `/api/v1/configurator/configuraciones/` | List / create saved configurations |
+| GET/DELETE | `/api/v1/configurator/configuraciones/<id>/` | Configuration detail / delete |
+| GET | `/api/v1/configurator/versions/` | List UVL versions (admin) |
+| POST | `/api/v1/configurator/versions/validate/` | Validate UVL text without saving |
+| POST | `/api/v1/configurator/versions/create/` | Create new UVL version |
+| GET/DELETE | `/api/v1/configurator/versions/<pk>/` | Version detail / delete |
+| GET | `/api/v1/configurator/versions/<pk>/preview-activation/` | Preview impact of activating version |
+| POST | `/api/v1/configurator/versions/<pk>/activate/` | Activate UVL version |
+| GET | `/api/v1/geo/provincias` | Province list |
+| GET | `/api/v1/geo/municipios` | Municipality list (filtered by province) |
+| GET | `/api/v1/geo/municipio-viewport` | Bounding box for a municipality |
 | POST | `/api/v1/telemetry/extract` | GEE Sentinel-2 extraction |
 | POST | `/api/v1/modelos/train` | Start async training (multipart: features JSON + csv_file) |
 | GET | `/api/v1/modelos/<id>/status` | Poll training status |
@@ -474,6 +504,23 @@ pip install -r backend/requirements/development.txt
 ```
 
 Flamapy requires Python < 3.13 (PySAT does not support 3.13+). TensorFlow is optional — if absent, all treatments fall back to GradientBoosting regardless of UVL `preferred_algorithm`.
+
+---
+
+## Offline Training Experiments (`backend/scripts/training_experiments/`)
+
+Offline harness for hyperparameter search — runs outside Django, reads CSV files directly from `csvs/`. Used to empirically determine optimal `preferred_algorithm` and `window_size_override` per target, whose results are encoded back into the UVL.
+
+```
+data_prep.py       # Load sensors per station, normalize, aggregate daily
+dendro_calc.py     # Python port of dendroCalc.ts (MCD/TasaBuenos/TasaSeveros)
+features.py        # Feature engineering variants (basic/long_lags/multi_roll/ema/full)
+run_experiments.py # Cross-station × target × variant runner (TimeSeriesSplit(5) + 15% holdout)
+select_winners.py  # Pick best per (station, target), emit winners.json + report.md
+results/           # Experiment outputs (gitignored)
+```
+
+Results documented in `docs/experimentacion_modelos.md`. This file is the source of truth for why each objective variable has its current `preferred_algorithm` and `window_size_override` in the UVL.
 
 ---
 

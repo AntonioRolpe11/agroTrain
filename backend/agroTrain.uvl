@@ -19,11 +19,11 @@ features
 							Albaricoquero { window_size 5, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
 					TipoSuelo { label 'Tipo de suelo' }
 						alternative
-							CampinaArcillosa { label 'Campiña arcillosa / bujeo' }
-							LomasCalizasAlbariza { label 'Lomas calizas / albariza' }
-							VegaAluvial { label 'Vega o terraza aluvial' }
-							PiedemonteSierra { label 'Piedemonte / sierra' }
-							MarismasSalinas { label 'Marismas o suelos salinos' }
+							Calcisoles { label 'Suelos calizos (calcisoles)' }
+							Luvisoles { label 'Tierras rojas mediterráneas (luvisoles)' }
+							Vertisoles { label 'Bujeos o tierras negras (vertisoles)' }
+							Cambisoles { label 'Tierras pardas (cambisoles)' }
+							LeptosolesRegosoles { label 'Suelos de sierra o esqueléticos (leptosoles/regosoles)' }
 		mandatory
 			ParametrosEntrada { label 'Parámetros de entrada', wizard_step 'sensors' }
 				mandatory
@@ -74,11 +74,11 @@ constraints
 	TasaSeveros => DatoTS
 	MCD => DatoMCD
 	NDWI => (NDVI | EVI | SAVI)
-	LomasCalizasAlbariza => (SAVI & NDWI)
-	CampinaArcillosa => (NDVI & NDWI) | (EVI & NDWI)
-	MarismasSalinas => (NDWI & EVI)
-	VegaAluvial => (NDVI) | (EVI)
-	PiedemonteSierra => (EVI & SAVI)
+	Calcisoles => (SAVI & NDWI)
+	Luvisoles => (NDVI | EVI)
+	Vertisoles => (EVI & NDWI)
+	Cambisoles => (NDVI | EVI)
+	LeptosolesRegosoles => (EVI & SAVI)
 	Naranjo => HumedadSuelo
 	Limonero => HumedadSuelo
 	Mandarino => HumedadSuelo
