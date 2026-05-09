@@ -8,7 +8,7 @@ class UVLVersion(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     file_path = models.CharField(max_length=500)  # relative to UVL_VERSIONS_PATH
-    file_hash = models.CharField(max_length=64)   # SHA-256 hex
+    file_hash = models.CharField(max_length=64, unique=True)   # SHA-256 hex
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

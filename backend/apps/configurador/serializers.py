@@ -40,11 +40,16 @@ class UVLVersionDetailSerializer(UVLVersionListSerializer):
             with _temp_uvl_file(uvl_path.read_text(encoding="utf-8")) as tmp:
                 fm = UVLReader(str(tmp)).transform()
                 # Temporarily swap class state to serialise this version's tree
-                old_fm = FlamapyService._base_fm_model
-                FlamapyService._base_fm_model = fm
-                tree = FlamapyService.to_dict()
-                FlamapyService._base_fm_model = old_fm
-                return tree
+                with FlamapyService._state_lock:
+                    old_fm = FlamapyService._base_fm_model
+                    old_bdd = FlamapyService._base_bdd_model
+                    try:
+                        FlamapyService._base_fm_model = fm
+                        FlamapyService._base_bdd_model = FmToBDD(fm).transform()
+                        return FlamapyService.to_dict()
+                    finally:
+                        FlamapyService._base_fm_model = old_fm
+                        FlamapyService._base_bdd_model = old_bdd
         except Exception:
             return None
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import tempfile
+import threading
 from pathlib import Path
 from typing import Generator
 
@@ -39,6 +40,7 @@ def _temp_uvl_file(content: str) -> Generator[Path, None, None]:
 
 
 class FlamapyService:
+    _state_lock = threading.RLock()
     _base_bdd_model = None
     _base_fm_model = None
     _all_feature_names: list[str] | None = None
@@ -63,13 +65,15 @@ class FlamapyService:
         cls._ensure_dependencies()
         resolved = path.resolve()
         fm_model = UVLReader(str(resolved)).transform()  # type: ignore[misc]
-        cls._base_bdd_model = FmToBDD(fm_model).transform()  # type: ignore[misc]
-        cls._base_fm_model = fm_model
-        cls._all_feature_names = cls._collect_all_feature_names(fm_model.root)
-        cls._labels = cls._collect_labels()
-        cls._partial_scope_features = cls._derive_partial_scope_features()
-        cls._active_path = resolved
-        cls._active_version_id = version_id
+        bdd_model = FmToBDD(fm_model).transform()  # type: ignore[misc]
+        with cls._state_lock:
+            cls._base_bdd_model = bdd_model
+            cls._base_fm_model = fm_model
+            cls._all_feature_names = cls._collect_all_feature_names(fm_model.root)
+            cls._labels = cls._collect_labels()
+            cls._partial_scope_features = cls._derive_partial_scope_features()
+            cls._active_path = resolved
+            cls._active_version_id = version_id
         logger.debug("BDD preconstruido desde %s (version_id=%s)", resolved, version_id)
 
     # ------------------------------------------------------------------
@@ -94,7 +98,8 @@ class FlamapyService:
 
     @classmethod
     def get_label(cls, feature_name: str) -> str:
-        return cls._labels.get(feature_name, feature_name)
+        with cls._state_lock:
+            return cls._labels.get(feature_name, feature_name)
 
     # ------------------------------------------------------------------
     # PARTIAL_SCOPE_FEATURES derivation from UVL 'wizard_step' attributes
@@ -180,9 +185,11 @@ class FlamapyService:
         Only reports constraints where ALL features are within scope —
         mirrors the frontend getViolations(constraints, subtreeNames, activeFeatures) filter.
         """
-        selected = set(features)
-        messages: list[str] = []
-        for constraint in cls._base_fm_model.get_constraints():
+        with cls._state_lock:
+            selected = set(features)
+            messages: list[str] = []
+            constraints = list(cls._base_fm_model.get_constraints())
+        for constraint in constraints:
             ast = cls._serialize_ast_node(constraint.ast.root)
             if ast.get("op") != "IMPLIES":
                 continue
@@ -224,44 +231,47 @@ class FlamapyService:
     @classmethod
     def get_subtree_feature_names(cls, parent_name: str) -> list[str]:
         """All descendant feature names under parent_name (exclusive of parent), in UVL order."""
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, parent_name)
-        if node is None:
-            return []
-        result: list[str] = []
-        for relation in node.get_relations():
-            for child in relation.children:
-                result.extend(cls._collect_all_feature_names(child))
-        return result
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            node = cls._find_feature(cls._base_fm_model.root, parent_name)
+            if node is None:
+                return []
+            result: list[str] = []
+            for relation in node.get_relations():
+                for child in relation.children:
+                    result.extend(cls._collect_all_feature_names(child))
+            return result
 
     @classmethod
     def get_csv_columns(cls, feature_name: str) -> list[str]:
         """CSV column name(s) for a feature, from its csv_col/csv_cols UVL attribute."""
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, feature_name)
-        if node is None:
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            node = cls._find_feature(cls._base_fm_model.root, feature_name)
+            if node is None:
+                return []
+            for attr in node.get_attributes():
+                if attr.name == "csv_col" and attr.default_value:
+                    return [attr.default_value]
+                if attr.name == "csv_cols" and attr.default_value:
+                    return [c.strip() for c in attr.default_value.split(",")]
             return []
-        for attr in node.get_attributes():
-            if attr.name == "csv_col" and attr.default_value:
-                return [attr.default_value]
-            if attr.name == "csv_cols" and attr.default_value:
-                return [c.strip() for c in attr.default_value.split(",")]
-        return []
 
     @classmethod
     def get_quality_thresholds(cls, target_name: str) -> dict | None:
         """R² quality thresholds for an objective variable, from its quality_min/quality_good UVL attributes."""
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, target_name)
-        if node is None:
-            return None
-        attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
-        if "quality_min" not in attrs or "quality_good" not in attrs:
-            return None
-        return {"min": float(attrs["quality_min"]), "good": float(attrs["quality_good"])}
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            node = cls._find_feature(cls._base_fm_model.root, target_name)
+            if node is None:
+                return None
+            attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
+            if "quality_min" not in attrs or "quality_good" not in attrs:
+                return None
+            return {"min": float(attrs["quality_min"]), "good": float(attrs["quality_good"])}
 
     _DEFAULT_TREATMENT_PROFILE: dict = {
         "window_size": 5,
@@ -272,20 +282,21 @@ class FlamapyService:
     @classmethod
     def get_treatment_profile(cls, treatment_name: str) -> dict:
         """Training profile for an olive irrigation treatment, derived from UVL attributes."""
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, treatment_name)
-        if node is None:
-            return dict(cls._DEFAULT_TREATMENT_PROFILE)
-        attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
-        profile = dict(cls._DEFAULT_TREATMENT_PROFILE)
-        if "window_size" in attrs:
-            profile["window_size"] = int(attrs["window_size"])
-        if "preferred_algorithm" in attrs:
-            profile["preferred_algorithm"] = attrs["preferred_algorithm"]
-        if "min_samples" in attrs:
-            profile["min_samples"] = int(attrs["min_samples"])
-        return profile
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            node = cls._find_feature(cls._base_fm_model.root, treatment_name)
+            if node is None:
+                return dict(cls._DEFAULT_TREATMENT_PROFILE)
+            attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
+            profile = dict(cls._DEFAULT_TREATMENT_PROFILE)
+            if "window_size" in attrs:
+                profile["window_size"] = int(attrs["window_size"])
+            if "preferred_algorithm" in attrs:
+                profile["preferred_algorithm"] = attrs["preferred_algorithm"]
+            if "min_samples" in attrs:
+                profile["min_samples"] = int(attrs["min_samples"])
+            return profile
 
     @classmethod
     def get_target_profile(cls, target_name: str) -> dict:
@@ -298,18 +309,19 @@ class FlamapyService:
         `docs/experimentacion_modelos.md` (sección "Reasignación del atributo
         preferred_algorithm" y "Window size variable por target").
         """
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        node = cls._find_feature(cls._base_fm_model.root, target_name)
-        if node is None:
-            return {}
-        attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
-        profile: dict = {}
-        if "preferred_algorithm" in attrs:
-            profile["preferred_algorithm"] = attrs["preferred_algorithm"]
-        if "window_size_override" in attrs:
-            profile["window_size"] = int(attrs["window_size_override"])
-        return profile
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            node = cls._find_feature(cls._base_fm_model.root, target_name)
+            if node is None:
+                return {}
+            attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
+            profile: dict = {}
+            if "preferred_algorithm" in attrs:
+                profile["preferred_algorithm"] = attrs["preferred_algorithm"]
+            if "window_size_override" in attrs:
+                profile["window_size"] = int(attrs["window_size_override"])
+            return profile
 
     @classmethod
     def get_crop_profile(cls, crop_name: str) -> dict:
@@ -322,24 +334,26 @@ class FlamapyService:
 
     @classmethod
     def to_dict(cls) -> dict:
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        return {
-            **cls._to_dict_rec(cls._base_fm_model.root),
-            "constraints": cls.get_constraints_json(),
-        }
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            return {
+                **cls._to_dict_rec(cls._base_fm_model.root),
+                "constraints": cls.get_constraints_json(),
+            }
 
     @classmethod
     def get_constraints_json(cls) -> list[dict]:
-        if cls._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-        return [
-            {
-                "features": constraint.get_features(),
-                "ast": cls._serialize_ast_node(constraint.ast.root),
-            }
-            for constraint in cls._base_fm_model.get_constraints()
-        ]
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            return [
+                {
+                    "features": constraint.get_features(),
+                    "ast": cls._serialize_ast_node(constraint.ast.root),
+                }
+                for constraint in cls._base_fm_model.get_constraints()
+            ]
 
     @classmethod
     def _serialize_ast_node(cls, node) -> dict:
@@ -397,26 +411,27 @@ class FlamapyService:
         filtered to constraints whose features are all within the evaluated scope.
         """
         self._ensure_dependencies()
-        if self._base_fm_model is None:
-            raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+        with self._state_lock:
+            if self._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
 
-        features_set = set(features)
-        all_names = self._all_feature_names or []
-        uvl_path = self._active_path or self.default_model_path
-        base_uvl = uvl_path.read_text(encoding="utf-8")
+            features_set = set(features)
+            all_names = list(self._all_feature_names or [])
+            uvl_path = self._active_path or self.default_model_path
+            base_uvl = uvl_path.read_text(encoding="utf-8")
 
-        if is_full:
-            scope = set(all_names)
-            pin_constraints = [name if name in features_set else f"!{name}" for name in all_names]
-        else:
-            scope = set(self._get_features_for_step(step))
-            pin_constraints = []
-            for name in all_names:
-                if name in features_set:
-                    pin_constraints.append(name)       # selected → True
-                elif name in scope:
-                    pin_constraints.append(f"!{name}") # in-scope, unselected → False
-                # out of scope → free (no constraint added)
+            if is_full:
+                scope = set(all_names)
+                pin_constraints = [name if name in features_set else f"!{name}" for name in all_names]
+            else:
+                scope = set(self._get_features_for_step(step))
+                pin_constraints = []
+                for name in all_names:
+                    if name in features_set:
+                        pin_constraints.append(name)       # selected → True
+                    elif name in scope:
+                        pin_constraints.append(f"!{name}") # in-scope, unselected → False
+                    # out of scope → free (no constraint added)
 
         if not pin_constraints:
             valid = self.satisfiable()
@@ -458,12 +473,13 @@ class FlamapyService:
     def _build_bdd_model(self, uvl: str | None):
         self._ensure_dependencies()
         if uvl is None:
-            if self._base_bdd_model is not None:
-                return self._base_bdd_model
-            if not self.default_model_path.exists():
-                raise FileNotFoundError(f"No se encontró el modelo UVL: {self.default_model_path}")
-            fm_model = UVLReader(str(self.default_model_path)).transform()  # type: ignore[misc]
-            return FmToBDD(fm_model).transform()  # type: ignore[misc]
+            with self._state_lock:
+                if self._base_bdd_model is not None:
+                    return self._base_bdd_model
+                if not self.default_model_path.exists():
+                    raise FileNotFoundError(f"No se encontró el modelo UVL: {self.default_model_path}")
+                fm_model = UVLReader(str(self.default_model_path)).transform()  # type: ignore[misc]
+                return FmToBDD(fm_model).transform()  # type: ignore[misc]
         with _temp_uvl_file(uvl) as tmp_path:
             fm_model = UVLReader(str(tmp_path)).transform()  # type: ignore[misc]
             return FmToBDD(fm_model).transform()  # type: ignore[misc]
@@ -473,13 +489,14 @@ class FlamapyService:
     # ------------------------------------------------------------------
 
     def _get_features_for_step(self, step: str) -> list[str]:
-        features: list[str] = []
-        scope = self._partial_scope_features
-        for current_step in PARTIAL_STEP_ORDER:
-            features.extend(scope.get(current_step, []))
-            if current_step == step:
-                break
-        return features
+        with self._state_lock:
+            features: list[str] = []
+            scope = self._partial_scope_features
+            for current_step in PARTIAL_STEP_ORDER:
+                features.extend(scope.get(current_step, []))
+                if current_step == step:
+                    break
+            return features
 
     # ------------------------------------------------------------------
     # Utilities

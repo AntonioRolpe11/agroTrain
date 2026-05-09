@@ -85,6 +85,7 @@ def test_predict_sklearn_generates_single_value(tmp_path):
     assert result["input_row_count"] == 4
     assert set(result["predictions"]) == {"MCD"}
     assert isinstance(result["predictions"]["MCD"], float)
+    assert str(result["predicted_for_date"]) == "2026-04-24"
 
 
 @pytest.mark.django_db

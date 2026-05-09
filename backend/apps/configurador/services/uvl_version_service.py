@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from django.conf import settings
+from django.db import IntegrityError, transaction
 
 from .flamapy_service import FlamapyService, PARTIAL_STEP_ORDER
 from .uvl_serializer import to_uvl
@@ -137,16 +138,21 @@ def create_version(
     dest = versions_dir / filename
     dest.write_text(uvl_text, encoding="utf-8")
 
-    version = UVLVersion.objects.create(
-        name=name,
-        description=description,
-        file_path=filename,
-        file_hash=file_hash,
-        author=author,
-        is_active=False,
-        is_valid=True,
-        validation_errors=[],
-    )
+    try:
+        version = UVLVersion.objects.create(
+            name=name,
+            description=description,
+            file_path=filename,
+            file_hash=file_hash,
+            author=author,
+            is_active=False,
+            is_valid=True,
+            validation_errors=[],
+        )
+    except IntegrityError:
+        dest.unlink(missing_ok=True)
+        existing = UVLVersion.objects.get(file_hash=file_hash)
+        return existing, ["Ya existe una versión idéntica (mismo hash): " + existing.name]
     return version, []
 
 
@@ -250,31 +256,46 @@ def activate_version(version_id: int, confirm_incompatible: bool = False) -> tup
     if not version.is_valid:
         return False, "Esta versión tiene errores de validación y no puede activarse.", None
 
+    uvl_path = Path(settings.UVL_VERSIONS_PATH) / version.file_path
+    validation_errors = validate_uvl_text(uvl_path.read_text(encoding="utf-8"))
+    if validation_errors:
+        version.is_valid = False
+        version.validation_errors = validation_errors
+        version.save(update_fields=["is_valid", "validation_errors"])
+        return False, "Esta versión tiene errores de validación y no puede activarse.", None
+
     # Preview incompatible configs
     report = preview_activation(version_id)
     if report.get("affected") and not confirm_incompatible:
         return False, "Hay configuraciones incompatibles. Usa confirm_incompatible=true para confirmar.", report
 
-    uvl_path = Path(settings.UVL_VERSIONS_PATH) / version.file_path
+    # Block new training jobs while BDD and DB active version move together.
+    with _lock:
+        active_trainings = [k for k, v in _registry.items() if v.get("status") == "training"]
+        if active_trainings:
+            return False, f"Hay {len(active_trainings)} entrenamiento(s) en curso. Espera a que terminen.", None
 
-    # Mark affected configs as obsolete
-    if report.get("affected"):
-        affected_ids = [a["id"] for a in report["affected"]]
-        Configuracion.objects.filter(pk__in=affected_ids).update(
-            is_obsolete=True,
-            obsolete_reason=f"Versión UVL activada: {version.name}",
-        )
+        # Build BDD first. If this fails, DB remains unchanged.
+        try:
+            FlamapyService.warm_up(uvl_path, version_id=version.pk)
+        except Exception as exc:
+            return False, f"Error recargando Flamapy: {exc}", None
 
-    # Swap active flag
-    UVLVersion.objects.filter(is_active=True).update(is_active=False)
-    version.is_active = True
-    version.save(update_fields=["is_active"])
+        with transaction.atomic():
+            list(UVLVersion.objects.select_for_update().all())
+            version = UVLVersion.objects.select_for_update().get(pk=version_id)
 
-    # Hot-reload Flamapy
-    try:
-        FlamapyService.warm_up(uvl_path, version_id=version.pk)
-    except Exception as exc:
-        return False, f"Error recargando Flamapy: {exc}", None
+            # Mark affected configs as obsolete only after warm_up succeeds.
+            if report.get("affected"):
+                affected_ids = [a["id"] for a in report["affected"]]
+                Configuracion.objects.filter(pk__in=affected_ids).update(
+                    is_obsolete=True,
+                    obsolete_reason=f"Versión UVL activada: {version.name}",
+                )
+
+            UVLVersion.objects.filter(is_active=True).exclude(pk=version.pk).update(is_active=False)
+            version.is_active = True
+            version.save(update_fields=["is_active"])
 
     logger.info("UVL version %s (%s) activada.", version.pk, version.name)
     return True, "", report
@@ -294,14 +315,23 @@ def seed_initial_version(source_uvl_path: Path) -> None:
     if not dest.exists():
         shutil.copy2(source_uvl_path, dest)
 
-    UVLVersion.objects.create(
-        name="Versión inicial",
-        description="Importada automáticamente desde agroTrain.uvl al arrancar.",
-        file_path="v1_initial.uvl",
-        file_hash=file_hash,
-        author=None,
-        is_active=True,
-        is_valid=True,
-        validation_errors=[],
-    )
+    validation_errors = validate_uvl_text(uvl_text)
+    if validation_errors:
+        logger.error("No se puede sembrar la versión UVL inicial: %s", validation_errors)
+        return
+
+    try:
+        UVLVersion.objects.create(
+            name="Versión inicial",
+            description="Importada automáticamente desde agroTrain.uvl al arrancar.",
+            file_path="v1_initial.uvl",
+            file_hash=file_hash,
+            author=None,
+            is_active=True,
+            is_valid=True,
+            validation_errors=[],
+        )
+    except IntegrityError:
+        logger.info("La versión UVL inicial ya existe por hash.")
+        return
     logger.info("Versión UVL inicial creada desde %s", source_uvl_path)

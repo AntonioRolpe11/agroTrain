@@ -85,7 +85,7 @@ export default function DigitalSensorCreation() {
   // Parcel step readiness — all mandatory ALTERNATIVE groups selected + geo
   const parcelaNode = model ? getNode(model, "DatosParcela") : null;
   const parcelFeaturesOk = parcelaNode ? allAlternativesSelected(parcelaNode, features) : false;
-  const parcelStepReady = parcelFeaturesOk && Boolean(geo.provinciaId) && Boolean(geo.municipioId);
+  const parcelStepReady = parcelFeaturesOk && Boolean(geo.provinciaId) && Boolean(geo.municipioId) && Boolean(geo.punto);
 
   const stepServerErrors = (step: string) => (errorStep === step ? serverErrors : []);
 
@@ -156,7 +156,7 @@ export default function DigitalSensorCreation() {
           punto: importedGeo.punto ?? null,
           cloudThreshold: importedGeo.cloudThreshold ?? 20,
         });
-        setUnlockedStepIndex(importedGeo.provinciaId && importedGeo.municipioId ? 3 : 0);
+        setUnlockedStepIndex(importedGeo.provinciaId && importedGeo.municipioId && importedGeo.punto ? 1 : 0);
         setServerErrors([]);
         setErrorStep(null);
         toast.success("Configuración importada", { description: `${importedFeatures.length} features restauradas.` });
@@ -198,7 +198,7 @@ export default function DigitalSensorCreation() {
       punto: g.punto ?? null,
       cloudThreshold: (g.cloudThreshold as number) ?? 20,
     });
-    setUnlockedStepIndex(g.provinciaId && g.municipioId ? 3 : 0);
+    setUnlockedStepIndex(g.provinciaId && g.municipioId && g.punto ? 1 : 0);
     setServerErrors([]);
     setErrorStep(null);
     setShowLoadPanel(false);
@@ -335,9 +335,9 @@ export default function DigitalSensorCreation() {
           {unlockedStepIndex >= 1 && (
             <div ref={sensorsRef}>
               <StepSensores
-                serverErrors={[]}
-                isPending={false}
-                onComplete={() => setUnlockedStepIndex(2)}
+                serverErrors={stepServerErrors("1")}
+                isPending={validateMutation.isPending}
+                onComplete={() => void handleCompleteStep(1)}
               />
             </div>
           )}

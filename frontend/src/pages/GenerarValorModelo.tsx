@@ -13,10 +13,17 @@ import { calculateDendroParams } from "@/lib/dendroCalc";
 import { csvRowsToTelemetryPoints, fuseSensorAndTelemetry, fusionResultToCsv, type FusionResult } from "@/lib/dataFusion";
 import { parseCsvFileGeneric, type GenericCsvDataset } from "@/lib/csvDataset";
 import { mergeSensorFiles, type SensorFileInput } from "@/lib/sensorMerger";
-import { buildCsvColumnInfo, collectCsvFeatures } from "@/utils/featureModel";
+import { buildCsvColumnInfo, collectCsvFeatures, getNode, getRelationChildren } from "@/utils/featureModel";
 
-const HARDCODED_SENSOR_IDS = new Set(["DatoMCD", "DatoTB", "DatoTS", "TemperaturaAire"]);
 const TARGET_SENSOR_COLS = new Set(["MCD", "TasaBuenos", "TasaSeveros"]);
+const TEMPERATURE_FEATURE_ID = "TemperaturaAire";
+
+function getCsvCols(node: { attributes?: Record<string, unknown> } | null): string[] {
+  const attrs = node?.attributes ?? {};
+  if (attrs.csv_col) return [String(attrs.csv_col)];
+  if (attrs.csv_cols) return String(attrs.csv_cols).split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
 
 interface SensorFileEntry {
   dataset: GenericCsvDataset | null;
@@ -67,11 +74,23 @@ export default function GenerarValorModelo() {
     () => telemetryColumnInfo.dataColumns.filter((col) => requiredCols.has(col)),
     [requiredCols, telemetryColumnInfo],
   );
+  const dendroSensors = useMemo(() => {
+    const dendroNode = featureModel ? getNode(featureModel, "Dendrometro") : null;
+    return dendroNode
+      ? getRelationChildren(dendroNode)
+          .map((node) => ({ featureName: node.name, csvCol: getCsvCols(node)[0] ?? node.name }))
+          .filter((sensor) => requiredCols.has(sensor.csvCol))
+      : [];
+  }, [featureModel, requiredCols]);
+  const excludedSensorIds = useMemo(
+    () => new Set([...dendroSensors.map((sensor) => sensor.featureName), TEMPERATURE_FEATURE_ID]),
+    [dendroSensors],
+  );
   const genericSensors = useMemo(
     () => featureModel && model
-      ? collectCsvFeatures(featureModel, features, HARDCODED_SENSOR_IDS).filter((s) => requiredCols.has(s.csvCol))
+      ? collectCsvFeatures(featureModel, features, excludedSensorIds).filter((s) => requiredCols.has(s.csvCol))
       : [],
-    [featureModel, features, model, requiredCols],
+    [featureModel, features, model, requiredCols, excludedSensorIds],
   );
 
   const requiredTargetCols = useMemo(
@@ -143,9 +162,11 @@ export default function GenerarValorModelo() {
     if (dendroRequired && dendroFile.dataset && dendroFile.timestampCol && dendroFile.dataCol) {
       const dendroCalc = calculateDendroParams(dendroFile.dataset.allRows, dendroFile.timestampCol, dendroFile.dataCol, activeDendroParams);
       dendroCalc.warnings.forEach((w) => toast.warning("Dendrómetro", { description: w }));
-      if (dendroCalc.mcd && requiredCols.has("MCD")) inputs.push({ canonicalCol: "MCD", precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.tb && requiredCols.has("TasaBuenos")) inputs.push({ canonicalCol: "TasaBuenos", precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.ts && requiredCols.has("TasaSeveros")) inputs.push({ canonicalCol: "TasaSeveros", precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      for (const sensor of dendroSensors) {
+        if (sensor.csvCol === "MCD" && dendroCalc.mcd) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaBuenos" && dendroCalc.tb) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaSeveros" && dendroCalc.ts) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      }
     }
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];

@@ -87,7 +87,7 @@ export function FeatureNode({ node, index = 0, depth = 0, readOnly = false, labe
                 const label =
                   (child.attributes?.label as string | undefined) ??
                   labelMap?.[child.name] ??
-                  child.name.split("-")[0];
+                  child.name;
 
                 if (isMandatory) {
                   return (

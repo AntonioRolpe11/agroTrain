@@ -4,7 +4,6 @@ import json
 import logging
 
 from django.http import HttpResponse
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -12,7 +11,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.accounts.permissions import IsOwnerOrAdminRole
+from apps.accounts.permissions import IsAdminRole, IsOwnerOrAdminRole
 from apps.configurador.services.flamapy_service import FlamapyService
 
 from .models import ModeloGuardado
@@ -103,6 +102,12 @@ def _get_authorized_model(request, model_id: str) -> ModeloGuardado | Response:
     return record
 
 
+def _legacy_metadata_allowed(request, metadata: dict) -> bool:
+    if request.user.is_admin:
+        return True
+    return metadata.get("user_id") == request.user.pk
+
+
 # ------------------------------------------------------------------ train
 
 @extend_schema(
@@ -168,6 +173,8 @@ def get_status(request, model_id: str):
     entry = get_training_status(model_id)
 
     if entry is not None:
+        if entry.get("user_id") != request.user.pk and not request.user.is_admin:
+            return Response({"detail": "No autorizado."}, status=403)
         return Response(entry)
 
     try:
@@ -182,6 +189,8 @@ def get_status(request, model_id: str):
     # Fallback: lectura desde disco (modelos anteriores sin registro DB)
     try:
         metadata = _storage_service.load_metadata(model_id)
+        if not _legacy_metadata_allowed(request, metadata):
+            return Response({"detail": "No autorizado."}, status=403)
         return Response({"status": "completed", **metadata})
     except StorageError:
         return Response({"detail": "Modelo no encontrado."}, status=404)
@@ -209,17 +218,20 @@ def model_detail(request, model_id: str):
     try:
         record = ModeloGuardado.objects.get(model_id=model_id)
     except ModeloGuardado.DoesNotExist:
-        # Fallback: modelo sin registro DB
+        # Fallback: modelo sin registro DB. Admin o dueño si metadata conserva user_id.
+        try:
+            metadata = _storage_service.load_metadata(model_id)
+        except StorageError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        if not _legacy_metadata_allowed(request, metadata):
+            return Response({"detail": "No autorizado."}, status=403)
         if request.method == "DELETE":
             try:
                 _storage_service.delete_model(model_id)
                 return Response(status=204)
             except StorageError as exc:
                 return Response({"detail": str(exc)}, status=404)
-        try:
-            return Response(_storage_service.load_metadata(model_id))
-        except StorageError as exc:
-            return Response({"detail": str(exc)}, status=404)
+        return Response(metadata)
 
     perm = IsOwnerOrAdminRole()
     if not perm.has_object_permission(request, None, record):
@@ -247,7 +259,12 @@ def download_model(request, model_id: str):
         if not perm.has_object_permission(request, None, record):
             return Response({"detail": "No autorizado."}, status=403)
     except ModeloGuardado.DoesNotExist:
-        pass  # Fallback para modelos sin registro DB
+        try:
+            metadata = _storage_service.load_metadata(model_id)
+        except StorageError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        if not _legacy_metadata_allowed(request, metadata):
+            return Response({"detail": "No autorizado."}, status=403)
 
     try:
         zip_bytes = _storage_service.export_zip(model_id)
@@ -269,7 +286,7 @@ def download_model(request, model_id: str):
 )
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def import_model(request):
     zip_file = request.FILES.get("zip_file")
     if not zip_file:
@@ -336,7 +353,7 @@ def predict_model(request, model_id: str):
     prediction = PrediccionModelo.objects.create(
         model=record,
         user=request.user,
-        predicted_for_date=result["predicted_for_date"] or timezone.localdate(),
+        predicted_for_date=result["predicted_for_date"],
         predictions=result["predictions"],
         input_row_count=result["input_row_count"],
         warnings=result.get("warnings", []),
@@ -354,4 +371,6 @@ def list_predictions(request, model_id: str):
     record = record_or_response
 
     predictions = PrediccionModelo.objects.filter(model=record)
+    if not request.user.is_admin:
+        predictions = predictions.filter(user=request.user)
     return Response({"predictions": [_prediction_from_db(p) for p in predictions]})

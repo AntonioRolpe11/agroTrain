@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from django.utils import timezone
 
 from .storage_service import StorageService
 from .training_service import _add_temporal_features, _desescalar_parcial
@@ -51,14 +50,18 @@ class PredictionService:
         if missing:
             raise PredictionServiceError(f"Columnas ausentes en CSV: {missing}")
 
+        predicted_for_date = (df["date"].max() + pd.Timedelta(days=1)).date()
+
         if algorithm == "LSTM":
             predictions = self._predict_lstm(model_id, df, targets, all_cols, window_size)
         else:
-            predictions = self._predict_sklearn(model_id, df, metadata, targets, input_features, window_size, algorithm)
+            predictions = self._predict_sklearn(
+                model_id, df, metadata, targets, input_features, window_size, algorithm, predicted_for_date
+            )
 
         return {
             "model_id": model_id,
-            "predicted_for_date": timezone.localdate(),
+            "predicted_for_date": predicted_for_date,
             "predictions": predictions,
             "input_row_count": int(len(df)),
             "warnings": [],
@@ -98,6 +101,7 @@ class PredictionService:
         input_features: list[str],
         window_size: int,
         algorithm: str,
+        predicted_for_date,
     ) -> dict[str, float]:
         base_cols = targets + input_features
         df_hist = df[["date", *base_cols]].dropna(subset=base_cols).copy()
@@ -110,7 +114,7 @@ class PredictionService:
         # non-target current values use the last observed values; target lags still
         # come from the real historical window via shift().
         last = df_hist.iloc[-1]
-        generated_date = pd.Timestamp(timezone.localdate())
+        generated_date = pd.Timestamp(predicted_for_date)
         future_row: dict[str, Any] = {"date": generated_date}
         for col in base_cols:
             future_row[col] = last[col]

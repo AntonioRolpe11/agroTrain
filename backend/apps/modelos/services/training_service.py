@@ -49,7 +49,8 @@ class ModelosServiceError(RuntimeError):
 
 def get_training_status(model_id: str) -> dict | None:
     with _lock:
-        return _registry.get(model_id)
+        entry = _registry.get(model_id)
+        return dict(entry) if entry is not None else None
 
 
 def _update_registry(model_id: str, **kwargs: Any) -> None:
@@ -81,6 +82,7 @@ class TrainingService:
                 "total_epochs": None,
                 "current_target": None,
                 "val_loss": None,
+                "user_id": user_id,
             }
         threading.Thread(
             target=self._train,
@@ -137,10 +139,7 @@ class TrainingService:
         # Empirically validated in docs/experimentacion_modelos.md: el algoritmo y la
         # ventana óptimos dependen del target, no del tratamiento de riego.
         target_profiles = [FlamapyService.get_target_profile(t) for t in targets]
-        target_profile: dict = {}
-        for tp in target_profiles:
-            for key, value in tp.items():
-                target_profile.setdefault(key, value)
+        target_profile = _merge_target_profiles(target_profiles)
 
         window_size: int = int(target_profile.get("window_size", profile["window_size"]))
         preferred: str = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
@@ -158,17 +157,17 @@ class TrainingService:
                 warnings.append(
                     "TensorFlow no disponible; se ha utilizado RandomForest."
                 )
-            elif n_joint < min_samples:
+            elif n_joint < min_samples or n_joint <= window_size * 2:
                 algorithm = "RandomForest"
                 warnings.append(
-                    f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {min_samples}). "
+                    f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {max(min_samples, window_size * 2 + 1)}). "
                     "Se ha utilizado RandomForest con características temporales."
                 )
 
         if algorithm == "LSTM":
-            self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {})
+            self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {}, user_id)
         else:
-            self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {})
+            self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {}, user_id)
 
         self._create_db_record(model_id, user_id)
 
@@ -186,6 +185,7 @@ class TrainingService:
         warnings: list[str],
         features: list[str],
         geo: dict,
+        user_id: int | None,
     ) -> None:
         # Approach: X windows include past target values (autoregressive, same as sensolive).
         # scaler_X and scaler_Y both fit on train partition only — no data leakage.
@@ -272,6 +272,7 @@ class TrainingService:
 
         self._storage.save_metadata(model_id, {
             "model_id": model_id,
+            "user_id": user_id,
             "algorithm": "LSTM",
             "treatment": treatment,
             "features": features,
@@ -312,6 +313,7 @@ class TrainingService:
         algorithm: str,
         features: list[str],
         geo: dict,
+        user_id: int | None,
     ) -> None:
         _update_registry(model_id, phase="preparando datos", algorithm=algorithm)
 
@@ -329,18 +331,27 @@ class TrainingService:
             # lag_sources already contains t (via targets), so base_cols = lag_sources avoids duplicates
             lag_sources = targets + input_features
             base_cols = lag_sources
-            if "date" in df.columns:
-                df_t = df[["date"] + base_cols].dropna(subset=base_cols).copy()
-                df_t = _add_temporal_features(df_t, lag_sources, window_size)
-                df_t = df_t.drop(columns=["date"], errors="ignore").dropna()
-            else:
-                df_t = df[base_cols].dropna(subset=base_cols).copy()
+            df_base = df[(["date"] if "date" in df.columns else []) + base_cols].dropna(subset=base_cols).copy()
+            split = int(len(df_base) * 0.8)
+            train_base = df_base.iloc[:split].copy()
+            val_base = df_base.iloc[split:].copy()
 
-            feat_cols = [c for c in df_t.columns if c != t]
+            if "date" in df_base.columns:
+                tr = _add_temporal_features(train_base, lag_sources, window_size)
+                vl = _add_temporal_features(val_base, lag_sources, window_size)
+                tr = tr.drop(columns=["date"], errors="ignore").dropna()
+                vl = vl.drop(columns=["date"], errors="ignore").dropna()
+            else:
+                tr = train_base.dropna()
+                vl = val_base.dropna()
+
+            if tr.empty or vl.empty:
+                raise ModelosServiceError(
+                    f"Datos insuficientes para {algorithm} tras aplicar ventana temporal {window_size}."
+                )
+
+            feat_cols = [c for c in tr.columns if c != t]
             feature_columns_by_target[t] = feat_cols
-            split = int(len(df_t) * 0.8)
-            tr = df_t.iloc[:split]
-            vl = df_t.iloc[split:]
             n_trains.append(len(tr))
             n_vals.append(len(vl))
 
@@ -368,6 +379,7 @@ class TrainingService:
         n_vl = min(n_vals) if n_vals else 0
         self._storage.save_metadata(model_id, {  # type: ignore[arg-type]
             "model_id": model_id,
+            "user_id": user_id,
             "algorithm": algorithm,
             "treatment": treatment,
             "features": features,
@@ -449,6 +461,20 @@ def _build_gb() -> HistGradientBoostingRegressor:
         early_stopping=True,
         random_state=42,
     )
+
+
+def _merge_target_profiles(target_profiles: list[dict]) -> dict:
+    algorithm_priority = {"GradientBoosting": 1, "RandomForest": 2, "LSTM": 3}
+    merged: dict = {}
+    for profile in target_profiles:
+        if "window_size" in profile:
+            merged["window_size"] = max(int(merged.get("window_size", 0)), int(profile["window_size"]))
+        if "preferred_algorithm" in profile:
+            current = merged.get("preferred_algorithm")
+            candidate = profile["preferred_algorithm"]
+            if current is None or algorithm_priority.get(candidate, 0) > algorithm_priority.get(current, 0):
+                merged["preferred_algorithm"] = candidate
+    return merged
 
 
 def _add_temporal_features(df: pd.DataFrame, input_features: list[str], window_size: int) -> pd.DataFrame:
