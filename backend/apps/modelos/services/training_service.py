@@ -40,6 +40,20 @@ except ImportError:
     TF_AVAILABLE = False
     logger.warning("TensorFlow no disponible — se usará RandomForest.")
 
+try:
+    import xgboost as xgb
+    XGB_AVAILABLE = True
+except Exception:
+    XGB_AVAILABLE = False
+    logger.warning("XGBoost no disponible — se usará HistGradientBoosting como fallback.")
+
+try:
+    import lightgbm as lgb
+    LGB_AVAILABLE = True
+except Exception:
+    LGB_AVAILABLE = False
+    logger.warning("LightGBM no disponible — se usará HistGradientBoosting como fallback.")
+
 _registry: dict[str, dict] = {}
 _lock = threading.Lock()
 
@@ -103,7 +117,7 @@ class TrainingService:
         user_id: int | None,
     ) -> None:
         try:
-            self._run_pipeline(model_id, targets, input_cols, treatment, csv_content, features, geo, user_id)
+            self._run_pipeline(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id)
         except Exception as exc:
             logger.exception("Error entrenando modelo %s", model_id)
             _update_registry(model_id, status="error", detail=str(exc))
@@ -130,46 +144,238 @@ class TrainingService:
         if not targets:
             raise ModelosServiceError("Ninguna variable objetivo activada en la configuración.")
 
-        missing = [c for c in targets + input_cols if c not in df.columns]
+        input_features = [c for c in input_cols if c not in set(targets)]
+        missing = [c for c in targets + input_features if c not in df.columns]
         if missing:
             raise ModelosServiceError(f"Columnas ausentes en CSV: {missing}")
 
-        profile = FlamapyService.get_treatment_profile(treatment)
-        # Per-target overrides (preferred_algorithm, window_size_override).
-        # Empirically validated in docs/experimentacion_modelos.md: el algoritmo y la
-        # ventana óptimos dependen del target, no del tratamiento de riego.
-        target_profiles = [FlamapyService.get_target_profile(t) for t in targets]
-        target_profile = _merge_target_profiles(target_profiles)
+        # Build per-target profiles from UVL treatment attributes
+        treatment_target_profiles: dict[str, dict] = {
+            t: FlamapyService.get_treatment_target_profile(treatment, t)
+            for t in targets
+        }
 
-        window_size: int = int(target_profile.get("window_size", profile["window_size"]))
-        preferred: str = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
-        min_samples: int = profile["min_samples"]
+        has_hyperprofiles = any(p.get("hyperprofile") for p in treatment_target_profiles.values())
 
-        input_features = [c for c in input_cols if c not in set(targets)]
-        all_cols = targets + input_features
-        n_joint = int(df[all_cols].dropna().shape[0])
-        algorithm = preferred
-        warnings: list[str] = []
-
-        if preferred == "LSTM":
-            if not TF_AVAILABLE:
-                algorithm = "RandomForest"
-                warnings.append(
-                    "TensorFlow no disponible; se ha utilizado RandomForest."
-                )
-            elif n_joint < min_samples or n_joint <= window_size * 2:
-                algorithm = "RandomForest"
-                warnings.append(
-                    f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {max(min_samples, window_size * 2 + 1)}). "
-                    "Se ha utilizado RandomForest con características temporales."
-                )
-
-        if algorithm == "LSTM":
-            self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {}, user_id)
+        if has_hyperprofiles:
+            self._train_per_target(
+                model_id, df, targets, input_features, treatment,
+                treatment_target_profiles, [], features or [], geo or {}, user_id,
+            )
         else:
-            self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {}, user_id)
+            # Legacy path: merged single-algorithm, supports LSTM
+            profile = FlamapyService.get_treatment_profile(treatment)
+            target_profiles_list = [FlamapyService.get_target_profile(t) for t in targets]
+            target_profile = _merge_target_profiles(target_profiles_list)
+
+            window_size: int = int(target_profile.get("window_size", profile["window_size"]))
+            preferred: str = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
+            min_samples: int = profile["min_samples"]
+
+            all_cols = targets + input_features
+            n_joint = int(df[all_cols].dropna().shape[0])
+            algorithm = preferred
+            warnings: list[str] = []
+
+            if preferred == "LSTM":
+                if not TF_AVAILABLE:
+                    algorithm = "RandomForest"
+                    warnings.append("TensorFlow no disponible; se ha utilizado RandomForest.")
+                elif n_joint < min_samples or n_joint <= window_size * 2:
+                    algorithm = "RandomForest"
+                    warnings.append(
+                        f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {max(min_samples, window_size * 2 + 1)}). "
+                        "Se ha utilizado RandomForest con características temporales."
+                    )
+
+            if algorithm == "LSTM":
+                self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {}, user_id)
+            else:
+                self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {}, user_id)
 
         self._create_db_record(model_id, user_id)
+
+    # ---------------------------------------------------------------- per-target sklearn
+
+    def _train_per_target(
+        self,
+        model_id: str,
+        df: pd.DataFrame,
+        targets: list[str],
+        input_features: list[str],
+        treatment: str,
+        treatment_target_profiles: dict[str, dict],
+        warnings: list[str],
+        features: list[str],
+        geo: dict,
+        user_id: int | None,
+    ) -> None:
+        from apps.modelos.services.hyperprofile_registry import UnknownHyperprofileError, get_hyperprofile
+        from apps.modelos.services.feature_engineering import add_features
+
+        _update_registry(model_id, phase="preparando datos por target")
+
+        sk_models: dict[str, Any] = {}
+        sk_scalers: dict[str, MinMaxScaler] = {}
+        metrics: dict[str, dict] = {}
+        val_series_data: dict[str, dict] = {}
+        feature_columns_by_target: dict[str, list[str]] = {}
+        n_trains: list[int] = []
+        n_vals: list[int] = []
+        target_profiles_meta: dict[str, dict] = {}
+
+        for t in targets:
+            _update_registry(model_id, current_target=t, phase="entrenando")
+
+            tp = treatment_target_profiles[t]
+            algorithm: str = tp["algorithm"]
+            window_size: int = tp["window_size"]
+            feature_variant: str | None = tp.get("feature_variant")
+            hyperprofile_name: str | None = tp.get("hyperprofile")
+
+            hp_params: dict = {}
+            max_samples: int | None = None
+
+            if hyperprofile_name:
+                try:
+                    hp = get_hyperprofile(hyperprofile_name)
+                except UnknownHyperprofileError as exc:
+                    raise ModelosServiceError(str(exc)) from exc
+
+                hp_params = hp.get("params", {})
+                max_samples = hp.get("max_samples")
+                required = hp.get("required_inputs", [])
+                optional = hp.get("optional_inputs", [])
+
+                missing_req = [c for c in required if c not in df.columns]
+                if missing_req:
+                    raise ModelosServiceError(
+                        f"Perfil {hyperprofile_name!r} requiere columnas ausentes para '{t}': {missing_req}"
+                    )
+                missing_opt = [c for c in optional if c not in df.columns]
+                if missing_opt:
+                    warnings.append(
+                        f"{t}: columnas opcionales ausentes para '{hyperprofile_name}': {missing_opt}. "
+                        "Se omiten features derivadas de esas columnas."
+                    )
+
+            is_target_only = feature_variant == "target_only"
+            lag_sources = [t] if is_target_only else ([t] + input_features)
+            date_col = ["date"] if "date" in df.columns else []
+            df_base = df[date_col + lag_sources].copy()
+            if not is_target_only:
+                df_base = _interpolate_sensor_gaps(df_base, input_features)
+            df_base = df_base.dropna(subset=lag_sources)
+
+            if algorithm == "SVR" and len(df_base) > 500:
+                warnings.append(
+                    f"{t}: Algoritmo SVR con {len(df_base)} filas de entrenamiento. "
+                    "El proceso puede tardar varios minutos."
+                )
+
+            # Apply features to full df_base before splitting so rolling windows
+            # (e.g. acc30d in irrigation_memory) have enough history for val rows.
+            # Shift(1) on all features guarantees no target leakage.
+            if feature_variant and "date" in df_base.columns:
+                df_aug = add_features(df_base, lag_sources, window_size, feature_variant)
+            elif "date" in df_base.columns:
+                df_aug = _add_temporal_features(df_base, lag_sources, window_size)
+            else:
+                df_aug = df_base.copy()
+
+            df_aug = df_aug.drop(columns=["date"], errors="ignore").dropna()
+
+            if df_aug.empty:
+                raise ModelosServiceError(
+                    f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
+                )
+
+            split = int(len(df_aug) * 0.8)
+            tr = df_aug.iloc[:split].copy()
+            vl = df_aug.iloc[split:].copy()
+
+            if tr.empty or vl.empty:
+                raise ModelosServiceError(
+                    f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
+                )
+
+            if max_samples and len(tr) > max_samples:
+                tr = tr.sample(max_samples, random_state=42)
+
+            feat_cols = [c for c in tr.columns if c != t]
+            feature_columns_by_target[t] = feat_cols
+            n_trains.append(len(tr))
+            n_vals.append(len(vl))
+
+            scaler = MinMaxScaler()
+            tr_arr = scaler.fit_transform(tr[[t] + feat_cols])
+            vl_arr = scaler.transform(vl[[t] + feat_cols])
+
+            X_tr, y_tr = tr_arr[:, 1:], tr_arr[:, 0]
+            X_vl, y_vl = vl_arr[:, 1:], vl_arr[:, 0]
+
+            est = _build_estimator(algorithm, hp_params, n_features=X_tr.shape[1], n_samples=X_tr.shape[0], warnings_out=warnings, target=t)
+
+            est.fit(X_tr, y_tr)
+
+            y_pred_scaled = est.predict(X_vl)
+            if hasattr(y_pred_scaled, "ndim") and y_pred_scaled.ndim > 1:
+                y_pred_scaled = y_pred_scaled.ravel()
+
+            y_pred = _desescalar_parcial(scaler, y_pred_scaled.reshape(-1, 1), 0).ravel()
+            y_true = _desescalar_parcial(scaler, y_vl.reshape(-1, 1), 0).ravel()
+            metrics[t] = _compute_metrics(y_true, y_pred)
+            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
+            _quality_warnings(t, metrics[t]["r2"], warnings)
+
+            sk_models[t] = est
+            sk_scalers[t] = scaler
+            target_profiles_meta[t] = {
+                "algorithm": algorithm,
+                "window_size": window_size,
+                "feature_variant": feature_variant,
+                "hyperprofile": hyperprofile_name,
+            }
+
+        self._storage.save_sklearn(model_id, sk_models, sk_scalers)
+
+        algorithms_used = {p["algorithm"] for p in target_profiles_meta.values()}
+        top_algorithm = next(iter(algorithms_used)) if len(algorithms_used) == 1 else "Mixed"
+        top_window = max(p["window_size"] for p in target_profiles_meta.values())
+        n_tr = min(n_trains) if n_trains else 0
+        n_vl = min(n_vals) if n_vals else 0
+
+        self._storage.save_metadata(model_id, {
+            "model_id": model_id,
+            "user_id": user_id,
+            "algorithm": top_algorithm,
+            "treatment": treatment,
+            "features": features,
+            "geo": geo,
+            "all_cols": targets + input_features,
+            "targets": targets,
+            "input_features": input_features,
+            "window_size": top_window,
+            "temporal_features": True,
+            "feature_columns_by_target": feature_columns_by_target,
+            "target_profiles": target_profiles_meta,
+            "n_samples": n_tr + n_vl,
+            "n_train": n_tr,
+            "n_val": n_vl,
+            "metrics": metrics,
+            "val_series": val_series_data,
+            "warnings": warnings,
+        })
+        _update_registry(
+            model_id,
+            status="completed",
+            algorithm=top_algorithm,
+            metrics=metrics,
+            val_series=val_series_data,
+            warnings=warnings,
+            n_train=n_tr,
+            n_val=n_vl,
+        )
 
     # ---------------------------------------------------------------- LSTM
 
@@ -187,8 +393,6 @@ class TrainingService:
         geo: dict,
         user_id: int | None,
     ) -> None:
-        # Approach: X windows include past target values (autoregressive, same as sensolive).
-        # scaler_X and scaler_Y both fit on train partition only — no data leakage.
         _update_registry(model_id, phase="preparando datos LSTM", algorithm="LSTM")
 
         df_clean = df[all_cols].dropna().reset_index(drop=True)
@@ -214,12 +418,12 @@ class TrainingService:
                 dtype="float32",
             )
 
-        # X: windows over ALL cols (targets + features) — autoregressive
         X_tr = make_windows(train_scaled)
         X_vl = make_windows(val_scaled)
 
         lstm_models: dict[str, Any] = {}
         metrics: dict[str, dict] = {}
+        val_series_data: dict[str, dict] = {}
         total_epochs = 200
         _update_registry(model_id, total_epochs=total_epochs)
         n_tr = len(X_tr)
@@ -228,7 +432,6 @@ class TrainingService:
         for t in targets:
             _update_registry(model_id, phase="entrenando", current_target=t, current_epoch=0, val_loss=None)
 
-            # Y: scaler_Y applied to raw target values, aligned with window offset
             y_tr = scaler_Y[t].transform(train_df[[t]].values[window_size:]).ravel().astype("float32")
             y_vl = scaler_Y[t].transform(val_df[[t]].values[window_size:]).ravel().astype("float32")
 
@@ -238,10 +441,7 @@ class TrainingService:
             x = Dense(64, activation="relu")(x)
             out = Dense(1)(x)
             model = Model(inp, out)
-            model.compile(
-                optimizer=tf.keras.optimizers.Adam(0.001),
-                loss=Huber(),
-            )
+            model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss=Huber())
 
             model.fit(
                 X_tr, y_tr,
@@ -250,21 +450,16 @@ class TrainingService:
                 batch_size=32,
                 callbacks=[
                     _ProgressCallback(model_id, t),
-                    EarlyStopping(
-                        monitor="val_loss",
-                        patience=30,
-                        restore_best_weights=True,
-                        min_delta=1e-4,
-                    ),
+                    EarlyStopping(monitor="val_loss", patience=30, restore_best_weights=True, min_delta=1e-4),
                 ],
                 verbose=0,
             )
 
             lstm_models[t] = model
-
             y_pred = scaler_Y[t].inverse_transform(model.predict(X_vl, verbose=0)).ravel()
             y_true = scaler_Y[t].inverse_transform(y_vl.reshape(-1, 1)).ravel()
             metrics[t] = _compute_metrics(y_true, y_pred)
+            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
             _quality_warnings(t, metrics[t]["r2"], warnings)
 
         scalers = {"X": scaler_X, **scaler_Y}
@@ -286,19 +481,12 @@ class TrainingService:
             "n_train": n_tr,
             "n_val": n_vl,
             "metrics": metrics,
+            "val_series": val_series_data,
             "warnings": warnings,
         })
-        _update_registry(
-            model_id,
-            status="completed",
-            algorithm="LSTM",
-            metrics=metrics,
-            warnings=warnings,
-            n_train=n_tr,
-            n_val=n_vl,
-        )
+        _update_registry(model_id, status="completed", algorithm="LSTM", metrics=metrics, val_series=val_series_data, warnings=warnings, n_train=n_tr, n_val=n_vl)
 
-    # --------------------------------------------------------------- RF / GB
+    # --------------------------------------------------------------- legacy RF / GB
 
     def _train_sklearn(
         self,
@@ -320,6 +508,7 @@ class TrainingService:
         sk_models: dict[str, Any] = {}
         sk_scalers: dict[str, MinMaxScaler] = {}
         metrics: dict[str, dict] = {}
+        val_series_data: dict[str, dict] = {}
         feature_columns_by_target: dict[str, list[str]] = {}
         n_trains: list[int] = []
         n_vals: list[int] = []
@@ -327,8 +516,6 @@ class TrainingService:
         for t in targets:
             _update_registry(model_id, current_target=t, phase="entrenando")
 
-            # Autoregressive: ALL targets (including t) + env features contribute lags
-            # lag_sources already contains t (via targets), so base_cols = lag_sources avoids duplicates
             lag_sources = targets + input_features
             base_cols = lag_sources
             df_base = df[(["date"] if "date" in df.columns else []) + base_cols].dropna(subset=base_cols).copy()
@@ -368,6 +555,7 @@ class TrainingService:
             y_pred = _desescalar_parcial(scaler, est.predict(X_vl).reshape(-1, 1), 0).ravel()
             y_true = _desescalar_parcial(scaler, y_vl.reshape(-1, 1), 0).ravel()
             metrics[t] = _compute_metrics(y_true, y_pred)
+            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
             _quality_warnings(t, metrics[t]["r2"], warnings)
 
             sk_models[t] = est
@@ -377,7 +565,7 @@ class TrainingService:
 
         n_tr = min(n_trains) if n_trains else 0
         n_vl = min(n_vals) if n_vals else 0
-        self._storage.save_metadata(model_id, {  # type: ignore[arg-type]
+        self._storage.save_metadata(model_id, {
             "model_id": model_id,
             "user_id": user_id,
             "algorithm": algorithm,
@@ -394,17 +582,10 @@ class TrainingService:
             "n_train": n_tr,
             "n_val": n_vl,
             "metrics": metrics,
+            "val_series": val_series_data,
             "warnings": warnings,
         })
-        _update_registry(
-            model_id,
-            status="completed",
-            algorithm=algorithm,
-            metrics=metrics,
-            warnings=warnings,
-            n_train=n_tr,
-            n_val=n_vl,
-        )
+        _update_registry(model_id, status="completed", algorithm=algorithm, metrics=metrics, val_series=val_series_data, warnings=warnings, n_train=n_tr, n_val=n_vl)
 
     def _create_db_record(self, model_id: str, user_id: int | None) -> None:
         try:
@@ -438,9 +619,6 @@ class TrainingService:
 # ------------------------------------------------------------------ helpers
 
 def _build_rf() -> RandomForestRegressor:
-    # Hiperparámetros calibrados empíricamente en la fase de experimentación
-    # (docs/experimentacion_modelos.md). Los ganadores RandomForest del experimento
-    # suelen usar n_estimators ≥ 400, max_depth ∈ {None, 20}, max_features cercano a 1.0.
     return RandomForestRegressor(
         n_estimators=600,
         max_depth=20,
@@ -463,6 +641,70 @@ def _build_gb() -> HistGradientBoostingRegressor:
     )
 
 
+def _build_estimator(
+    algorithm: str,
+    params: dict[str, Any],
+    n_features: int | None = None,
+    n_samples: int | None = None,
+    warnings_out: list[str] | None = None,
+    target: str = "",
+) -> Any:
+    """Build a sklearn-compatible estimator from algorithm name and hyperparameters."""
+    if algorithm == "RandomForest":
+        return _build_rf()
+
+    if algorithm in ("GradientBoosting", "HistGB"):
+        return _build_gb()
+
+    if algorithm == "XGBoost":
+        if not XGB_AVAILABLE:
+            msg = f"{target}: XGBoost no disponible; usando HistGradientBoosting."
+            logger.warning(msg)
+            if warnings_out is not None:
+                warnings_out.append(msg)
+            return _build_gb()
+        return xgb.XGBRegressor(**params, random_state=42, verbosity=0)
+
+    if algorithm == "LightGBM":
+        if not LGB_AVAILABLE:
+            msg = f"{target}: LightGBM no disponible; usando HistGradientBoosting."
+            logger.warning(msg)
+            if warnings_out is not None:
+                warnings_out.append(msg)
+            return _build_gb()
+        return lgb.LGBMRegressor(**params, random_state=42)
+
+    if algorithm == "SVR":
+        from sklearn.svm import SVR
+        return SVR(**params)
+
+    if algorithm == "PLSRegression":
+        from sklearn.cross_decomposition import PLSRegression
+        p = dict(params)
+        if n_features is not None or n_samples is not None:
+            max_comp = min(
+                p.get("n_components", 2),
+                *([n_features] if n_features is not None else []),
+                *([n_samples] if n_samples is not None else []),
+            )
+            if max_comp < p.get("n_components", 2):
+                msg = (
+                    f"{target}: PLSRegression n_components reducido de "
+                    f"{p['n_components']} a {max_comp} por datos insuficientes."
+                )
+                logger.warning(msg)
+                if warnings_out is not None:
+                    warnings_out.append(msg)
+            p["n_components"] = max_comp
+        return PLSRegression(**p)
+
+    if algorithm == "ElasticNet":
+        from sklearn.linear_model import ElasticNet
+        return ElasticNet(**params)
+
+    raise ModelosServiceError(f"Algoritmo no soportado: {algorithm!r}")
+
+
 def _merge_target_profiles(target_profiles: list[dict]) -> dict:
     algorithm_priority = {"GradientBoosting": 1, "RandomForest": 2, "LSTM": 3}
     merged: dict = {}
@@ -477,14 +719,32 @@ def _merge_target_profiles(target_profiles: list[dict]) -> dict:
     return merged
 
 
+def _interpolate_sensor_gaps(df: pd.DataFrame, input_features: list[str]) -> pd.DataFrame:
+    """
+    Fill short sensor outages before feature engineering.
+    Only applied to input feature columns — never to target variables.
+
+    pluv: fillna(0) — no reading means no rain.
+    humedad_*: linear interpolation, limit=5 days (slow-varying soil moisture).
+    everything else: linear interpolation, limit=3 days.
+    """
+    df = df.copy()
+    for col in input_features:
+        if col not in df.columns:
+            continue
+        if col == "pluv":
+            df[col] = df[col].fillna(0.0)
+        elif col.startswith("humedad_"):
+            df[col] = df[col].interpolate(method="linear", limit=5, limit_direction="both")
+        else:
+            df[col] = df[col].interpolate(method="linear", limit=3, limit_direction="both")
+    return df
+
+
 def _add_temporal_features(df: pd.DataFrame, input_features: list[str], window_size: int) -> pd.DataFrame:
     """
-    Añade features temporales: estacionalidad anual sin/cos, lags por feature,
-    media móvil corta y EMAs (alpha=0.3 y alpha=0.7).
-
-    Las EMAs se incorporan tras el experimento documentado en
-    docs/experimentacion_modelos.md, donde la variante 'ema' superó a 'basic' en
-    33% de los modelos sin perjudicar al resto. Coste: 2 columnas por feature.
+    Legacy feature engineering used by the RandomForest/HistGB path.
+    Adds seasonal sin/cos, lags, short rolling mean, and EMAs (alpha=0.3/0.7).
     """
     df = df.copy()
     day_of_year = df["date"].dt.dayofyear

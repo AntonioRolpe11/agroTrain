@@ -5,18 +5,11 @@ features
 		mandatory
 			DatosParcela { wizard_step 'parcel' }
 				mandatory
-					Cultivo { label 'Especie de cultivo' }
+					Tratamiento { label 'Tratamiento de riego' }
 						alternative
-							Olivo { window_size 7, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 700 }
-							Almendro { window_size 5, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 120, min_good 500 }
-							Vid { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 60, min_warn 80, min_good 500 }
-							Naranjo { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
-							Limonero { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
-							Mandarino { window_size 3, preferred_algorithm 'GradientBoosting', min_samples 60, min_reject 40, min_warn 60, min_good 365 }
-							Melocotonero { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
-							Nectarino { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
-							Ciruelo { window_size 4, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
-							Albaricoquero { window_size 5, preferred_algorithm 'LSTM', min_samples 730, min_reject 50, min_warn 80, min_good 365 }
+							RiegoControl { label 'Riego control', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'XGBoost', window_MCD 3, feat_variant_MCD 'irrigation_memory', hyperprofile_MCD 'control_mcd_xgb_v1', pref_alg_TasaBuenos 'SVR', window_TasaBuenos 28, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'control_tasabuenos_svr_v1', pref_alg_TasaSeveros 'LightGBM', window_TasaSeveros 3, feat_variant_TasaSeveros 'soil_profile', hyperprofile_TasaSeveros 'control_tasaseveros_lgbm_v1' }
+							RiegoDeficitario { label 'Riego deficitario', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'irrigation_memory', hyperprofile_MCD 'rdc_mcd_pls_v1', pref_alg_TasaBuenos 'PLSRegression', window_TasaBuenos 10, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'rdc_tasabuenos_pls_v1', pref_alg_TasaSeveros 'SVR', window_TasaSeveros 21, feat_variant_TasaSeveros 'target_only', hyperprofile_TasaSeveros 'rdc_tasaseveros_svr_v1' }
+							RiegoDeficitarioSevero { label 'Riego deficitario severo', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices', hyperprofile_MCD 'secano_mcd_pls_v1', pref_alg_TasaBuenos 'ElasticNet', window_TasaBuenos 2, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'secano_tasabuenos_elasticnet_v1', pref_alg_TasaSeveros 'SVR', window_TasaSeveros 7, feat_variant_TasaSeveros 'ema', hyperprofile_TasaSeveros 'secano_tasaseveros_svr_v1' }
 					TipoSuelo { label 'Tipo de suelo' }
 						alternative
 							Calcisoles { label 'Suelos calizos (calcisoles)' }
@@ -44,6 +37,8 @@ features
 							Hd65 { label '65 cm', csv_col 'humedad_Hd65' }
 							Hd75 { label '75 cm', csv_col 'humedad_Hd75' }
 					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
+					Pluviometro { label 'Pluviómetro', csv_col 'pluv' }
+					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
 		mandatory
 			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
 				optional
@@ -56,9 +51,9 @@ features
 		mandatory
 			VariableObjetivo { label 'Variable objetivo', wizard_step 'objective' }
 				alternative
-					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80 }
-					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70 }
-					MCD { quality_min 0.35, quality_good 0.50 }
+					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80, preferred_algorithm 'RandomForest' }
+					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70, preferred_algorithm 'RandomForest', window_size_override 3 }
+					MCD { label 'Contracción del tronco', quality_min 0.35, quality_good 0.50, preferred_algorithm 'LSTM', window_size_override 3 }
 constraints
 	Hd05 => HumedadSuelo
 	Hd15 => HumedadSuelo
@@ -79,16 +74,9 @@ constraints
 	Vertisoles => (EVI & NDWI)
 	Cambisoles => (NDVI | EVI)
 	LeptosolesRegosoles => (EVI & SAVI)
-	Naranjo => HumedadSuelo
-	Limonero => HumedadSuelo
-	Mandarino => HumedadSuelo
-	Naranjo => Hd05 | Hd15
-	Limonero => Hd05 | Hd15
-	Mandarino => Hd05 | Hd15
-	Vid => Hd15 | Hd25 | Hd35
-	Melocotonero => Hd15 | Hd25 | Hd35
-	Nectarino => Hd15 | Hd25 | Hd35
-	Ciruelo => Hd15 | Hd25 | Hd35
-	Almendro => Hd25 | Hd35 | Hd45
-	Albaricoquero => Hd25 | Hd35 | Hd45
-	Olivo => Hd35 | Hd45 | Hd55
+	RiegoControl => Hd35 | Hd45 | Hd55
+	RiegoControl => Pluviometro
+	RiegoDeficitario => Hd35 | Hd45 | Hd55
+	RiegoDeficitario => DPV
+	RiegoDeficitarioSevero => Hd35 | Hd45 | Hd55
+	RiegoDeficitarioSevero => DPV

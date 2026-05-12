@@ -48,6 +48,7 @@ import {
 import { mergeSensorFiles, type MergedSensorResult, type SensorFileInput } from "@/lib/sensorMerger";
 import { calculateDendroParams } from "@/lib/dendroCalc";
 import type { TargetMetrics } from "@/types/api";
+import { ValSeriesChart } from "@/components/results/ValSeriesChart";
 import { getNode, getRelationChildren, buildCsvColumnInfo, buildTreatmentTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
 
 const TEMPERATURE_FEATURE_ID = "TemperaturaAire";
@@ -954,6 +955,16 @@ export default function Results() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+              {trainingStatus.data.val_series && Object.keys(trainingStatus.data.val_series).length > 0 && (
+                <div>
+                  <p className="mb-3 text-sm font-medium">Real vs predicho (conjunto de validación)</p>
+                  <div className="space-y-5">
+                    {Object.entries(trainingStatus.data.val_series).map(([target, series]) => (
+                      <ValSeriesChart key={target} target={target} series={series} />
+                    ))}
                   </div>
                 </div>
               )}

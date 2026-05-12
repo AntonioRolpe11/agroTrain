@@ -32,7 +32,19 @@ type SectionDef = {
   leavesOnly: boolean;
   excludeNames?: Set<string>;
   attrFields: AttrField[];
+  perTargetAttrKeys?: AttrField[];
 };
+
+const FEAT_VARIANTS = [
+  "basic", "long_lags", "multi_roll", "ema", "calendar",
+  "irrigation_memory", "soil_profile", "stress_indices",
+  "robust_smoothing", "target_only", "full",
+];
+
+const ALGORITHMS = [
+  "XGBoost", "SVR", "LightGBM", "PLSRegression",
+  "ElasticNet", "RandomForest", "GradientBoosting", "LSTM",
+];
 
 const SECTIONS: SectionDef[] = [
   {
@@ -44,11 +56,17 @@ const SECTIONS: SectionDef[] = [
     leavesOnly: false,
     attrFields: [
       { key: "label", label: "Etiqueta", type: "text" },
-      { key: "window_size", label: "Ventana (días)", type: "number", required: true },
-      { key: "min_samples", label: "Min muestras LSTM", type: "number", required: true },
+      { key: "window_size", label: "Ventana por defecto (días)", type: "number", required: true },
+      { key: "min_samples", label: "Min muestras", type: "number", required: true },
       { key: "min_reject", label: "min_reject", type: "number", required: true },
       { key: "min_warn", label: "min_warn", type: "number", required: true },
       { key: "min_good", label: "min_good", type: "number", required: true },
+    ],
+    perTargetAttrKeys: [
+      { key: "pref_alg", label: "Algoritmo", type: "select", options: ALGORITHMS, required: true },
+      { key: "window", label: "Ventana (días)", type: "number" },
+      { key: "feat_variant", label: "Variante features", type: "select", options: FEAT_VARIANTS, required: true },
+      { key: "hyperprofile", label: "Hyperprofile", type: "text", required: true },
     ],
   },
   {
@@ -98,8 +116,6 @@ const SECTIONS: SectionDef[] = [
       { key: "label", label: "Etiqueta", type: "text" },
       { key: "quality_min", label: "R² mínimo", type: "number", required: true },
       { key: "quality_good", label: "R² bueno", type: "number", required: true },
-      { key: "preferred_algorithm", label: "Algoritmo", type: "select", options: ["LSTM", "RandomForest", "GradientBoosting"], required: true },
-      { key: "window_size_override", label: "Ventana override (días)", type: "number" },
     ],
   },
 ];
@@ -138,6 +154,12 @@ function findNodeByName(root: FeatureModelNode, name: string): FeatureModelNode 
 
 function isLeafNode(node: FeatureModelNode): boolean {
   return node.relations.every(r => r.children.length === 0);
+}
+
+function getObjectiveTargets(tree: FeatureModelNode): string[] {
+  const node = findNodeByName(tree, "VariableObjetivo");
+  if (!node) return [];
+  return node.relations.flatMap(r => r.children.map(c => c.name));
 }
 
 function getEditableLeaves(tree: FeatureModelNode, section: SectionDef): FeatureModelNode[] {
@@ -288,9 +310,10 @@ function VersionCard({
 // ── LeafRow ───────────────────────────────────────────────────────────────────
 
 function LeafRow({
-  leaf, section, editable, onUpdate, onDelete,
+  leaf, section, editable, targets = [], onUpdate, onDelete,
 }: {
   leaf: FeatureModelNode; section: SectionDef; editable: boolean;
+  targets?: string[];
   onUpdate: (n: FeatureModelNode) => void; onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -369,6 +392,50 @@ function LeafRow({
               )}
             </div>
           ))}
+
+          {section.perTargetAttrKeys && targets.length > 0 && (
+            <div className="mt-1 space-y-3 pt-1 border-t border-border">
+              <p className="text-xs font-medium text-muted-foreground">Parámetros por variable objetivo</p>
+              {targets.map(target => (
+                <div key={target} className="pl-2 border-l-2 border-primary/30 space-y-1.5">
+                  <p className="text-xs font-semibold">{target}</p>
+                  {section.perTargetAttrKeys!.map(field => {
+                    const fullKey = `${field.key}_${target}`;
+                    return (
+                      <div key={fullKey} className="flex items-center gap-2">
+                        <Label className="text-xs w-36 shrink-0 text-muted-foreground">{field.label}</Label>
+                        {field.type === "select" ? (
+                          <select
+                            className="h-7 text-xs border border-input rounded px-1.5 bg-background flex-1"
+                            value={String(attrs[fullKey] ?? field.options![0])}
+                            onChange={e => onUpdate({ ...leaf, attributes: { ...attrs, [fullKey]: e.target.value } })}
+                          >
+                            {field.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <Input
+                            className="h-7 text-xs font-mono"
+                            type={field.type === "number" ? "number" : "text"}
+                            placeholder="opcional"
+                            value={String(attrs[fullKey] ?? "")}
+                            onChange={e => onUpdate({
+                              ...leaf,
+                              attributes: {
+                                ...attrs,
+                                [fullKey]: field.type === "number"
+                                  ? (e.target.value === "" ? "" : Number(e.target.value))
+                                  : e.target.value,
+                              },
+                            })}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -378,9 +445,9 @@ function LeafRow({
 // ── AddLeafForm ───────────────────────────────────────────────────────────────
 
 function AddLeafForm({
-  section, onAdd, onCancel,
+  section, targets = [], onAdd, onCancel,
 }: {
-  section: SectionDef; onAdd: (leaf: FeatureModelNode) => void; onCancel: () => void;
+  section: SectionDef; targets?: string[]; onAdd: (leaf: FeatureModelNode) => void; onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [vals, setVals] = useState<Record<string, string>>(() => {
@@ -435,6 +502,42 @@ function AddLeafForm({
           )}
         </div>
       ))}
+
+      {section.perTargetAttrKeys && targets.length > 0 && (
+        <div className="mt-1 space-y-3 pt-2 border-t border-border">
+          <p className="text-xs font-medium text-muted-foreground">Parámetros por variable objetivo</p>
+          {targets.map(target => (
+            <div key={target} className="pl-2 border-l-2 border-primary/30 space-y-1.5">
+              <p className="text-xs font-semibold">{target}</p>
+              {section.perTargetAttrKeys!.map(field => {
+                const fullKey = `${field.key}_${target}`;
+                return (
+                  <div key={fullKey} className="flex items-center gap-2">
+                    <Label className="text-xs w-36 shrink-0 text-muted-foreground">{field.label}</Label>
+                    {field.type === "select" ? (
+                      <select
+                        className="h-7 text-xs border border-input rounded px-1.5 bg-background flex-1"
+                        value={vals[fullKey] ?? field.options![0]}
+                        onChange={e => setVals(v => ({ ...v, [fullKey]: e.target.value }))}
+                      >
+                        {field.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <Input
+                        className="h-7 text-xs font-mono"
+                        type={field.type === "number" ? "number" : "text"}
+                        placeholder="opcional"
+                        value={vals[fullKey] ?? ""}
+                        onChange={e => setVals(v => ({ ...v, [fullKey]: e.target.value }))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex justify-end gap-1.5 pt-1">
         <Button size="sm" variant="ghost" onClick={onCancel}><X size={12} className="mr-1" />Cancelar</Button>
         <Button size="sm" onClick={submit}><Check size={12} className="mr-1" />Añadir</Button>
@@ -446,11 +549,12 @@ function AddLeafForm({
 // ── LeafGroupPanel ────────────────────────────────────────────────────────────
 
 function LeafGroupPanel({
-  section, leaves, editable, onChange,
+  section, leaves, editable, targets = [], onChange,
 }: {
   section: SectionDef;
   leaves: FeatureModelNode[];
   editable: boolean;
+  targets?: string[];
   onChange?: (updater: (current: FeatureModelNode[]) => FeatureModelNode[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -479,6 +583,7 @@ function LeafGroupPanel({
             leaf={leaf}
             section={section}
             editable={editable}
+            targets={targets}
             onUpdate={updated => onChange?.(arr => arr.map((l, i) => i === idx ? updated : l))}
             onDelete={() => onChange?.(arr => arr.filter((_, i) => i !== idx))}
           />
@@ -488,6 +593,7 @@ function LeafGroupPanel({
       {editable && adding && (
         <AddLeafForm
           section={section}
+          targets={targets}
           onAdd={leaf => { onChange?.(arr => [...arr, leaf]); setAdding(false); }}
           onCancel={() => setAdding(false)}
         />
@@ -625,6 +731,7 @@ export default function UvlEditor() {
   // ── render helpers ──
 
   function renderSections(tree: FeatureModelNode, editable: boolean) {
+    const targets = getObjectiveTargets(tree);
     return (
       <div className="space-y-4">
         {/* Parcela: Tratamientos + Tipos suelo side by side */}
@@ -635,6 +742,7 @@ export default function UvlEditor() {
               section={section}
               leaves={getEditableLeaves(tree, section)}
               editable={editable}
+              targets={section.id === "tratamiento" ? targets : undefined}
               onChange={editable ? handleSectionChange(section) : undefined}
             />
           ))}

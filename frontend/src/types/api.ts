@@ -111,6 +111,11 @@ export interface TargetMetrics {
   r2: number;
 }
 
+export interface ValSeries {
+  y_true: number[];
+  y_pred: number[];
+}
+
 export interface TrainingStatus {
   status: "training" | "completed" | "error";
   phase?: string | null;
@@ -122,6 +127,7 @@ export interface TrainingStatus {
   n_train?: number | null;
   n_val?: number | null;
   metrics?: Record<string, TargetMetrics>;
+  val_series?: Record<string, ValSeries>;
   warnings?: string[];
   detail?: string | null;
   // campos adicionales cuando status === "completed" (vienen del metadata)

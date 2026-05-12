@@ -55,11 +55,15 @@ def user_detail(request, pk: int):
     if request.method == "DELETE":
         if not request.user.is_admin:
             return Response({"detail": "Solo administradores pueden eliminar usuarios."}, status=403)
+        if user.pk == request.user.pk:
+            return Response({"detail": "No puedes eliminar tu propia cuenta."}, status=400)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     partial = request.method == "PATCH"
     serializer = UserUpdateSerializer(user, data=request.data, partial=partial)
     serializer.is_valid(raise_exception=True)
+    if user.pk == request.user.pk and "is_active" in request.data:
+        return Response({"detail": "No puedes desactivar tu propia cuenta."}, status=400)
     serializer.save()
     return Response(UserSerializer(user).data)

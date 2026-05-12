@@ -3,6 +3,8 @@ import { Plus, Trash2, UserCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { useAuth } from "@/contexts/AuthContext";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +66,7 @@ const EMPTY_FORM = { email: "", nombre: "", password: "", role: "tecnico" };
 
 export default function UserManagement() {
   const { data: users = [], isLoading } = useUsers();
+  const { user: currentUser } = useAuth();
   const createMut = useCreateUser();
   const toggleMut = useToggleActive();
   const deleteMut = useDeleteUser();
@@ -176,9 +179,10 @@ export default function UserManagement() {
                   </td>
                   <td className="px-4 py-2">
                     <button
-                      title={u.is_active ? "Desactivar" : "Activar"}
+                      title={u.id === currentUser?.id ? "No puedes desactivarte a ti mismo" : u.is_active ? "Desactivar" : "Activar"}
+                      disabled={u.id === currentUser?.id}
                       onClick={() => toggleMut.mutate({ id: u.id, is_active: !u.is_active })}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       {u.is_active ? (
                         <UserCheck className="w-4 h-4 text-green-600" />
@@ -192,13 +196,14 @@ export default function UserManagement() {
                   </td>
                   <td className="px-4 py-2 text-right">
                     <button
-                      title="Eliminar"
+                      title={u.id === currentUser?.id ? "No puedes eliminarte a ti mismo" : "Eliminar"}
+                      disabled={u.id === currentUser?.id}
                       onClick={() => {
                         if (confirm(`¿Eliminar a ${u.nombre}?`)) {
                           deleteMut.mutate(u.id);
                         }
                       }}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

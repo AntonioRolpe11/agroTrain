@@ -103,27 +103,24 @@ export function getSensorDateRange(
   return [dates[0], dates[dates.length - 1]];
 }
 
-const TELEMETRY_INDEX_ALIASES: Record<string, string> = {
-  ndvi: "NDVI",
-  evi: "EVI",
-  savi: "SAVI",
-  ndwi: "NDWI",
-};
-
-export function csvRowsToTelemetryPoints(rows: CsvPreviewRow[], headers: string[]): TelemetryPoint[] {
+export function csvRowsToTelemetryPoints(
+  rows: CsvPreviewRow[],
+  headers: string[],
+  selectedIndices: string[],
+): TelemetryPoint[] {
   // Find the raw header name whose alias matches the canonical name
   const findCol = (canonical: string): string | undefined =>
     headers.find((h) => {
       const normalized = h.toLowerCase().trim();
       if (canonical === "date") return normalized === "date";
-      return TELEMETRY_INDEX_ALIASES[normalized] === canonical;
+      return normalized === canonical.toLowerCase();
     });
 
   const dateCol = findCol("date");
   if (!dateCol) return [];
 
   // Pre-compute index → raw header mapping once (not per row)
-  const indexCols: [string, string][] = (["NDVI", "EVI", "SAVI", "NDWI"] as const)
+  const indexCols: [string, string][] = selectedIndices
     .map((idx) => [idx, findCol(idx)] as [string, string])
     .filter(([, col]) => col !== undefined);
 
@@ -195,7 +192,7 @@ export function fuseSensorAndTelemetry(params: FusionParams): FusionResult {
   const sortedDates = Array.from(dateAccumulator.keys()).sort();
   const sensorDateRange: [string, string] = [sortedDates[0], sortedDates[sortedDates.length - 1]];
 
-  if (telemetryPoints.length === 0) {
+  if (selectedIndices.length > 0 && telemetryPoints.length === 0) {
     warnings.push("La fuente de telemetría no contiene ningún punto; las columnas de índices quedarán vacías.");
   }
 

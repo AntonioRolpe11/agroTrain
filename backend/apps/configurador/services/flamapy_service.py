@@ -324,6 +324,53 @@ class FlamapyService:
             return profile
 
     @classmethod
+    def get_treatment_target_profile(cls, treatment_name: str, target_name: str) -> dict:
+        """
+        Returns algorithm, window_size, feature_variant, hyperprofile for a
+        treatment/target pair.
+
+        Fallback chain:
+        1. Treatment node: pref_alg_<target>, window_<target>, feat_variant_<target>, hyperprofile_<target>
+        2. Target node: preferred_algorithm, window_size_override
+        3. Treatment profile defaults (window_size, preferred_algorithm)
+        """
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            treatment_node = cls._find_feature(cls._base_fm_model.root, treatment_name)
+            target_node = cls._find_feature(cls._base_fm_model.root, target_name)
+            treatment_attrs = (
+                {attr.name: attr.default_value for attr in treatment_node.get_attributes() if attr.default_value}
+                if treatment_node is not None else {}
+            )
+            target_attrs = (
+                {attr.name: attr.default_value for attr in target_node.get_attributes() if attr.default_value}
+                if target_node is not None else {}
+            )
+
+        profile: dict = {}
+        alg_key = f"pref_alg_{target_name}"
+        win_key = f"window_{target_name}"
+        feat_key = f"feat_variant_{target_name}"
+        hp_key = f"hyperprofile_{target_name}"
+
+        if alg_key in treatment_attrs:
+            profile["algorithm"] = treatment_attrs[alg_key]
+        if win_key in treatment_attrs:
+            profile["window_size"] = int(treatment_attrs[win_key])
+        if feat_key in treatment_attrs:
+            profile["feature_variant"] = treatment_attrs[feat_key]
+        if hp_key in treatment_attrs:
+            profile["hyperprofile"] = treatment_attrs[hp_key]
+
+        treatment_profile = cls.get_treatment_profile(treatment_name)
+        profile.setdefault("algorithm", treatment_profile["preferred_algorithm"])
+        profile.setdefault("window_size", treatment_profile["window_size"])
+        profile.setdefault("feature_variant", None)
+        profile.setdefault("hyperprofile", None)
+        return profile
+
+    @classmethod
     def get_crop_profile(cls, crop_name: str) -> dict:
         """Backward-compatible alias for legacy callers; use get_treatment_profile."""
         return cls.get_treatment_profile(crop_name)
