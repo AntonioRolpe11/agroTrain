@@ -34,6 +34,10 @@ Thumbs.db
 # Modelos ML entrenados (binarios pesados, se regeneran entrenando)
 backend/model_storage/
 
+# Outputs de experimentación ML offline (regenerables)
+backend/scripts/training_experiments/results/*
+!backend/scripts/training_experiments/results/.gitkeep
+
 # Credenciales GEE (nunca al repositorio público)
 eeproject-*.json
 backend/secrets/
@@ -49,3 +53,13 @@ backend/uvl_versions/*
 # Ficheros internos de planificación y copias de trabajo
 PLAN.md
 agroTrain - copia.txt
+
+csvs/
+
+# Artefactos de cobertura y catboost (regenerables)
+.coverage
+.coverage.*
+htmlcov/
+frontend/coverage/
+catboost_info/
+backend/catboost_info/
