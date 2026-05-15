@@ -71,14 +71,24 @@ class ActivateUVLVersionSerializer(serializers.Serializer):
 
 
 class ConfiguracionSerializer(serializers.ModelSerializer):
+    uvl_version_name = serializers.SerializerMethodField()
+    uvl_version_active = serializers.SerializerMethodField()
+
     class Meta:
         model = Configuracion
         fields = [
             "id", "nombre", "features", "geo",
-            "uvl_version", "is_obsolete", "obsolete_reason",
+            "uvl_version", "uvl_version_name", "uvl_version_active",
+            "is_obsolete", "obsolete_reason",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "is_obsolete", "obsolete_reason", "created_at", "updated_at"]
+
+    def get_uvl_version_name(self, obj):
+        return obj.uvl_version.name if obj.uvl_version else None
+
+    def get_uvl_version_active(self, obj):
+        return obj.uvl_version.is_active if obj.uvl_version else False
 
 
 class ValidateResponseSerializer(serializers.Serializer):

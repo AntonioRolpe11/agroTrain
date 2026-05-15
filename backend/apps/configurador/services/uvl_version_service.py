@@ -287,11 +287,13 @@ def activate_version(version_id: int, confirm_incompatible: bool = False) -> tup
 
             # Mark affected configs as obsolete only after warm_up succeeds.
             if report.get("affected"):
-                affected_ids = [a["id"] for a in report["affected"]]
-                Configuracion.objects.filter(pk__in=affected_ids).update(
-                    is_obsolete=True,
-                    obsolete_reason=f"Versión UVL activada: {version.name}",
-                )
+                for a in report["affected"]:
+                    Configuracion.objects.filter(pk=a["id"]).update(
+                        is_obsolete=True,
+                        obsolete_reason=(
+                            f"Obsoleta al activar «{version.name}»: {a['reason']}"
+                        ),
+                    )
 
             UVLVersion.objects.filter(is_active=True).exclude(pk=version.pk).update(is_active=False)
             version.is_active = True

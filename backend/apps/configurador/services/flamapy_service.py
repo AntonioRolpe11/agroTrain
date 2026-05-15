@@ -370,11 +370,6 @@ class FlamapyService:
         profile.setdefault("hyperprofile", None)
         return profile
 
-    @classmethod
-    def get_crop_profile(cls, crop_name: str) -> dict:
-        """Backward-compatible alias for legacy callers; use get_treatment_profile."""
-        return cls.get_treatment_profile(crop_name)
-
     # ------------------------------------------------------------------
     # Feature model serialization
     # ------------------------------------------------------------------
