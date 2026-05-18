@@ -724,7 +724,6 @@ def _interpolate_sensor_gaps(df: pd.DataFrame, input_features: list[str]) -> pd.
     Fill short sensor outages before feature engineering.
     Only applied to input feature columns — never to target variables.
 
-    pluv: fillna(0) — no reading means no rain.
     humedad_*: linear interpolation, limit=5 days (slow-varying soil moisture).
     everything else: linear interpolation, limit=3 days.
     """
@@ -732,9 +731,7 @@ def _interpolate_sensor_gaps(df: pd.DataFrame, input_features: list[str]) -> pd.
     for col in input_features:
         if col not in df.columns:
             continue
-        if col == "pluv":
-            df[col] = df[col].fillna(0.0)
-        elif col.startswith("humedad_"):
+        if col.startswith("humedad_"):
             df[col] = df[col].interpolate(method="linear", limit=5, limit_direction="both")
         else:
             df[col] = df[col].interpolate(method="linear", limit=3, limit_direction="both")

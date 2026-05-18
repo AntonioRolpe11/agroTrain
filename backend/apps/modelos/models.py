@@ -56,7 +56,8 @@ class PrediccionModelo(models.Model):
     warnings = models.JSONField(default=list)
 
     class Meta:
-        ordering = ["-generated_at"]
+        ordering = ["-predicted_for_date", "-generated_at"]
+        unique_together = [("model", "predicted_for_date")]
 
     def __str__(self) -> str:
         return f"{self.model.model_id[:8]} @ {self.generated_at:%Y-%m-%d %H:%M}"

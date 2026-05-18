@@ -350,6 +350,18 @@ def predict_model(request, model_id: str):
     except (PredictionServiceError, StorageError) as exc:
         return Response({"detail": str(exc)}, status=400)
 
+    predicted_for_date = result["predicted_for_date"]
+    existing = PrediccionModelo.objects.filter(model=record, predicted_for_date=predicted_for_date).first()
+    if existing:
+        return Response(
+            {
+                "detail": f"Ya existe una predicción para el {predicted_for_date} en este modelo.",
+                "existing_prediction_id": existing.id,
+                "predicted_for_date": str(predicted_for_date),
+            },
+            status=409,
+        )
+
     prediction = PrediccionModelo.objects.create(
         model=record,
         user=request.user,
