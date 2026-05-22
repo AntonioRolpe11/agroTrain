@@ -14,7 +14,6 @@ def _base_df(n: int = 40, extra_cols: list[str] | None = None) -> pd.DataFrame:
         "tmax": np.random.default_rng(1).uniform(20, 35, n),
         "tmin": np.random.default_rng(2).uniform(5, 20, n),
         "dpv": np.random.default_rng(3).uniform(0.5, 3.0, n),
-        "pluv": np.random.default_rng(4).uniform(0, 5, n),
     }
     for col in (extra_cols or []):
         data[col] = np.random.default_rng(5).uniform(0, 1, n)
@@ -65,30 +64,28 @@ def test_lags_use_shifted_values():
     )
 
 
-def test_irrigation_memory_tolerates_missing_riego():
-    """irrigation_memory must not crash when 'riego' column absent."""
-    df = _base_df()  # has pluv but not riego
-    result = add_features(df.copy(), ["MCD", "tmax", "dpv", "pluv"], window_size=3, variant="irrigation_memory")
-    assert "pluv_acc3d" in result.columns
-    assert "riego_acc3d" not in result.columns
-    # water_acc7d requires both riego and pluv; only pluv present → should not appear
-    assert "water_acc7d" not in result.columns
+def test_irrigation_memory_produces_lags_rolling():
+    """irrigation_memory variant produces lags and rolling without crashing."""
+    df = _base_df()
+    result = add_features(df.copy(), ["MCD", "tmax", "dpv"], window_size=3, variant="irrigation_memory")
+    assert "MCD_lag1" in result.columns
+    assert "MCD_roll3d" in result.columns
+    assert "day_sin" in result.columns
 
 
-def test_stress_indices_without_pluv():
-    """stress_indices builds dpv/temp features even when pluv absent."""
-    df = _base_df()[["date", "MCD", "tmax", "tmin", "dpv"]]
+def test_stress_indices_builds_dpv_temp_features():
+    """stress_indices builds dpv/temp features."""
+    df = _base_df()
     result = add_features(df.copy(), ["MCD", "tmax", "tmin", "dpv"], window_size=3, variant="stress_indices")
     assert "temp_air_range" in result.columns
     assert "dpv_x_tmax" in result.columns
     assert "dpv_x_temp_range" in result.columns
-    # pluv absent → water_prev_day should not appear
     assert "water_prev_day" not in result.columns
 
 
 def test_stress_indices_without_tmax_tmin_skips_derived():
     """If required columns for a derived feature are absent, that feature is silently skipped."""
-    df = _base_df()[["date", "MCD", "dpv", "pluv"]]
+    df = _base_df()[["date", "MCD", "dpv"]]
     result = add_features(df.copy(), ["MCD", "dpv"], window_size=2, variant="stress_indices")
     # tmax absent → no temp_air_range, no dpv_x_tmax
     assert "temp_air_range" not in result.columns

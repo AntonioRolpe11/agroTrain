@@ -1,0 +1,22 @@
+[run]
+source = apps
+omit =
+    */migrations/*
+    */tests/*
+    */apps.py
+    */__init__.py
+    apps/*/admin.py
+    apps/common/*
+branch = True
+
+[report]
+precision = 1
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+
+[html]
+directory = htmlcov

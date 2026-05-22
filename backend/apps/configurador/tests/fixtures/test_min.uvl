@@ -1,0 +1,43 @@
+namespace agroTrainTest
+
+features
+	Entrada
+		mandatory
+			DatosParcela { wizard_step 'parcel' }
+				mandatory
+					Tratamiento { label 'Tratamiento de riego' }
+						alternative
+							Secano { label 'Secano', window_size 5, preferred_algorithm 'RandomForest', min_samples 20, min_reject 10, min_warn 15, min_good 50 }
+							RiegoControl { label 'Riego control', window_size 7, preferred_algorithm 'RandomForest', min_samples 30, min_reject 10, min_warn 20, min_good 60 }
+					TipoSuelo { label 'Tipo de suelo' }
+						alternative
+							Calcisoles { label 'Calcisoles' }
+							Vertisoles { label 'Vertisoles' }
+		mandatory
+			ParametrosEntrada { label 'Parámetros de entrada', wizard_step 'sensors' }
+				mandatory
+					Dendrometro { label 'Dendrómetro' }
+						optional
+							DatoMCD { label 'Dato MCD', csv_col 'MCD' }
+							DatoTB { label 'Dato Tasa Buenos', csv_col 'TasaBuenos' }
+				optional
+					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
+					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
+		mandatory
+			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
+				optional
+					NDVI { csv_col 'NDVI' }
+					EVI { csv_col 'EVI' }
+				mandatory
+					Nubes { label 'Umbral de nubes' }
+		mandatory
+			VariableObjetivo { label 'Variable objetivo', wizard_step 'objective' }
+				alternative
+					MCD { label 'MCD', quality_min 0.35, quality_good 0.50 }
+					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80, preferred_algorithm 'RandomForest', window_size_override 7 }
+constraints
+	Dendrometro => DatoMCD | DatoTB
+	MCD => DatoMCD
+	TasaBuenos => DatoTB
+	RiegoControl => TemperaturaAire
+	Calcisoles => NDVI
