@@ -57,6 +57,7 @@ from sklearn.svm import SVR
 
 from .data_prep import STATIONS, PLATFORM_INPUTS_NO_TELEMETRY, platform_input_columns, prepare_station, to_platform_training_frame
 from .features import VARIANTS, add_features
+from .treatment_data import load_training_csv_frames
 
 logger = logging.getLogger(__name__)
 
@@ -386,6 +387,23 @@ def _extract_feature_importances(estimator: Any, feature_names: list[str], top_n
 
 # ─────────────────────────────────────── tabular pipeline ──
 
+# Registries reused by treatment_winners.py to re-evaluate stored configs per parcela.
+TABULAR_BUILDERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "HistGB": _build_histgb,
+    "RandomForest": _build_rf,
+    "ExtraTrees": _build_extra_trees,
+    "GradientBoosting": _build_gradient_boosting,
+    "KNeighbors": _build_knn,
+    "SVR": _build_svr,
+    "ElasticNet": _build_elasticnet,
+    "PLSRegression": _build_pls,
+    "LightGBM": _build_lightgbm,
+    "XGBoost": _build_xgboost,
+    "CatBoost": _build_catboost,
+}
+SEQUENCE_ALGOS: frozenset[str] = frozenset({"LSTM", "GRU", "Conv1D", "CNN-LSTM"})
+
+
 def _prepare_xy(
     station_df: pd.DataFrame,
     target: str,
@@ -702,6 +720,38 @@ def _input_features(station_df: pd.DataFrame) -> list[str]:
     return platform_input_columns(station_df)
 
 
+def iter_station_frames(cfg: "RunConfig"):
+    """
+    Yield `(station, platform_df)` for each requested station.
+
+    Two sources, selected by `cfg.use_training_csvs`:
+    - False (default): rebuild each station from its raw 24 CSVs in `csvs/` via `prepare_station`.
+    - True: read the per-treatment `entrenamiento_*.csv` and split by the `station` column.
+      One series per parcela; parcels are never concatenated.
+    """
+    if cfg.use_training_csvs:
+        frames = load_training_csv_frames()
+        for station in cfg.stations:
+            df = frames.get(station)
+            if df is None:
+                logger.error("Station %s not present in training CSVs; skipping", station)
+                continue
+            yield station, df
+        return
+
+    for station in cfg.stations:
+        try:
+            station_df_raw, prep_warnings = prepare_station(station)
+        except Exception as exc:
+            logger.error("Station %s failed to prepare: %s", station, exc)
+            continue
+        for w in prep_warnings:
+            logger.info("[%s] %s", station, w)
+        yield station, to_platform_training_frame(
+            station_df_raw, targets=TARGETS, input_cols=PLATFORM_INPUTS_NO_TELEMETRY
+        )
+
+
 @dataclass
 class RunConfig:
     quick: bool = False
@@ -726,6 +776,7 @@ class RunConfig:
     include_optional_boosters: bool = False
     enable_ensembles: bool = True
     seed: int = DEFAULT_RNG_SEED
+    use_training_csvs: bool = False
 
 
 def _quick_overrides(cfg: RunConfig) -> RunConfig:
@@ -746,6 +797,27 @@ def _quick_overrides(cfg: RunConfig) -> RunConfig:
     cfg.window_sizes = [3, 7]
     cfg.feature_variants = ["basic", "target_only"]
     cfg.enable_ensembles = False
+    return cfg
+
+
+def _medium_overrides(cfg: RunConfig) -> RunConfig:
+    """Búsqueda media: explora bien (random search se aplana pasadas ~30 muestras/algo) en ~2h.
+    Sin CatBoost (lento, no expresable en producción) ni secuenciales por defecto."""
+    cfg.histgb_samples = 30
+    cfg.rf_samples = 15
+    cfg.extra_trees_samples = 15
+    cfg.gradient_boosting_samples = 12
+    cfg.knn_samples = 8
+    cfg.svr_samples = 12
+    cfg.elasticnet_samples = 12
+    cfg.pls_samples = 10
+    cfg.lightgbm_samples = 20
+    cfg.xgboost_samples = 20
+    cfg.catboost_samples = 0
+    cfg.sequence_samples = 0
+    cfg.window_sizes = list(WINDOW_SIZES)
+    cfg.feature_variants = list(VARIANTS)
+    cfg.enable_ensembles = True
     return cfg
 
 
@@ -1060,16 +1132,7 @@ def run(cfg: RunConfig, output_dir: Path) -> Path:
             df_buf.to_csv(out_csv, index=False)
         rows_buffer.clear()
 
-    for station in cfg.stations:
-        try:
-            station_df_raw, prep_warnings = prepare_station(station)
-        except Exception as exc:
-            logger.error("Station %s failed to prepare: %s", station, exc)
-            continue
-        for w in prep_warnings:
-            logger.info("[%s] %s", station, w)
-
-        station_df = to_platform_training_frame(station_df_raw, targets=TARGETS, input_cols=PLATFORM_INPUTS_NO_TELEMETRY)
+    for station, station_df in iter_station_frames(cfg):
         inputs = _input_features(station_df)
         n = len(station_df)
         holdout_idx_for_tabular = temporal_holdout_index(n, HOLDOUT_FRACTION)
@@ -1289,6 +1352,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run ML experiments per station/target.")
     parser.add_argument("--quick", action="store_true", help="Tiny smoke run (1 station, 1 target, ~10 combos)")
     parser.add_argument("--overnight", action="store_true", help="Full nightly random search budget")
+    parser.add_argument("--max", dest="max_flag", action="store_true", help="Maximum search: overnight + optional boosters + sequential NN + ensembles")
+    parser.add_argument("--medium", dest="medium_flag", action="store_true", help="Medium search (~2h): reduced budgets, boosters on, no CatBoost/NN")
+    parser.add_argument("--from-training-csvs", dest="from_training_csvs", action="store_true", help="Read data from entrenamiento_*.csv (split by station) instead of csvs/ raw files")
     parser.add_argument("--all", dest="all_flag", action="store_true", help="Run on all 6 stations (default)")
     parser.add_argument("--station", action="append", choices=STATIONS, help="Restrict to specific station(s)")
     parser.add_argument("--target", action="append", choices=TARGETS, help="Restrict to specific target(s)")
@@ -1299,6 +1365,7 @@ def main() -> None:
         help="Try LightGBM/XGBoost/CatBoost when installed",
     )
     parser.add_argument("--no-ensembles", action="store_true", help="Skip final weighted/stacking ensembles")
+    parser.add_argument("--no-catboost", dest="no_catboost", action="store_true", help="Drop CatBoost (slow, not production-expressible)")
     parser.add_argument("--seed", type=int, default=DEFAULT_RNG_SEED)
     parser.add_argument("--output-dir", type=Path, default=None, help="Override output dir (default: results/<timestamp>)")
     args = parser.parse_args()
@@ -1315,10 +1382,23 @@ def main() -> None:
         cfg.stations = args.station
     if args.target:
         cfg.targets = args.target
-    if args.overnight:
+    if args.medium_flag:
+        cfg = _medium_overrides(cfg)
+        cfg.include_optional_boosters = True
+        cfg.skip_lstm = True
+    elif args.max_flag:
+        cfg = _overnight_overrides(cfg)
+        cfg.include_optional_boosters = True
+        cfg.skip_lstm = args.skip_lstm  # --skip-lstm wins even under --max
+        cfg.enable_ensembles = True
+    elif args.overnight:
         cfg = _overnight_overrides(cfg)
     if args.quick:
         cfg = _quick_overrides(cfg)
+    if args.from_training_csvs:
+        cfg.use_training_csvs = True
+    if args.no_catboost:
+        cfg.catboost_samples = 0
 
     if args.output_dir:
         out_dir = args.output_dir

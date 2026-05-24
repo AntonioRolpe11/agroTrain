@@ -115,19 +115,6 @@ def _add_ema(df: pd.DataFrame, cols: list[str], alphas: list[float]) -> pd.DataF
     return df
 
 
-def _add_irrigation_memory(df: pd.DataFrame) -> pd.DataFrame:
-    source_cols = [c for c in ("riego", "pluv", "hd_riego") if c in df.columns]
-    for col in source_cols:
-        shifted = df[col].shift(1)
-        for window in (3, 7, 14, 30):
-            df[f"{col}_acc{window}d"] = shifted.rolling(window).sum()
-            df[f"{col}_avg{window}d"] = shifted.rolling(window).mean()
-    if "riego" in df.columns and "pluv" in df.columns:
-        water = (df["riego"].fillna(0.0) + df["pluv"].fillna(0.0)).shift(1)
-        for window in (7, 14, 30):
-            df[f"water_acc{window}d"] = water.rolling(window).sum()
-    return df
-
 
 def _existing_depth_cols(df: pd.DataFrame, depth_cols: tuple[tuple[str, int], ...]) -> list[str]:
     return [col for col, _depth in depth_cols if col in df.columns]
@@ -173,17 +160,6 @@ def _add_stress_indices(df: pd.DataFrame) -> pd.DataFrame:
     if "dpv" in df.columns and "temp_air_range" in df.columns:
         df["dpv_x_temp_range"] = df["dpv"] * df["temp_air_range"]
 
-    previous_water = None
-    if "riego" in df.columns or "pluv" in df.columns:
-        previous_water = (
-            df.get("riego", pd.Series(0.0, index=df.index)).fillna(0.0)
-            + df.get("pluv", pd.Series(0.0, index=df.index)).fillna(0.0)
-        ).shift(1)
-        df["water_prev_day"] = previous_water
-    if previous_water is not None and "tmax" in df.columns:
-        df["water_prev_x_tmax"] = previous_water * df["tmax"]
-    if previous_water is not None and "dpv" in df.columns:
-        df["simple_water_deficit"] = df["dpv"] / (1.0 + previous_water.clip(lower=0.0))
     return df
 
 
@@ -246,7 +222,6 @@ def add_features(
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
         out = _add_rolling(out, feature_cols, base_roll)
-        out = _add_irrigation_memory(out)
     elif variant == "soil_profile":
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
@@ -256,7 +231,6 @@ def add_features(
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
         out = _add_rolling(out, feature_cols, base_roll)
-        out = _add_irrigation_memory(out)
         out = _add_stress_indices(out)
     elif variant == "robust_smoothing":
         out = _add_day_of_year_cyclical(out)
@@ -281,7 +255,6 @@ def add_features(
         rolls = sorted({3, 7, 14, 30, *base_roll})
         out = _add_rolling(out, feature_cols, rolls)
         out = _add_ema(out, feature_cols, [0.3, 0.7])
-        out = _add_irrigation_memory(out)
         out = _add_soil_profile(out)
         out = _add_stress_indices(out)
         out = _add_robust_smoothing(out, feature_cols)

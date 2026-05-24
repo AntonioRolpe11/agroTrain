@@ -9,17 +9,26 @@ training_experiments/
 ├── data_prep.py          # Load 24 sensors per station, normalize, aggregate daily
 ├── dendro_calc.py        # Python port of frontend/src/lib/dendroCalc.ts (MCD/TB/TS)
 ├── features.py           # Feature engineering variants
+├── make_training_csvs.py # Consolida los 3 CSV entrenamiento_{tratamiento}.csv (dendro+humedad+temp+dpv)
+├── treatment_data.py     # Carga esos CSV y los divide por estación (fuente --from-training-csvs)
 ├── run_experiments.py    # Cross-station × target × variant runner with TimeSeriesSplit(5) + 15% holdout
 ├── select_winners.py     # Pick best per (station, target), emit winners.json + report.md
+├── treatment_winners.py  # Pick best per (treatment, target) sin pooling, emit snippets UVL/hyperprofiles
 ├── tests/                # Unit tests (dendro_calc parity, naming normalization)
 └── results/              # Experiment outputs (gitignored)
 ```
 
 ## CSV source
 
-Reads from `<repo_root>/csvs/`. Stations are detected by filename prefix; the 6 known prefixes (`Control_59_3-3_O`, `Control_60_4-3_O`, `RDC_49_5-1_O`, `RDC_62_6-3_O`, `Secano_46_2-1_O`, `Secano_53_3-2_O`) are normalized for orthographic variants (`Tª_↔Ta_`, `Pluviómetro/Pluvómetro/PLuviómetro` → `Pluviometro`).
+Dos fuentes de datos, seleccionables por flag:
 
-**One model per station** — files from different stations are never combined.
+- **Por defecto** (`csvs/` crudo): reconstruye cada estación desde sus 24 CSV sueltos. Las 6 prefijos
+  (`Control_59_3-3_O`, `Control_60_4-3_O`, `RDC_49_5-1_O`, `RDC_62_6-3_O`, `Secano_46_2-1_O`,
+  `Secano_53_3-2_O`) se normalizan ortográficamente (`Tª_↔Ta_`, `Pluviómetro/…` → `Pluviometro`).
+- **`--from-training-csvs`**: lee `csvs/entrenamiento_{tratamiento}.csv` (generados por
+  `make_training_csvs.py`) y los **divide por la columna `station`** → una serie por parcela.
+
+**One model per station** — files from different stations are never combined (tampoco con `--from-training-csvs`: las parcelas de un mismo tratamiento nunca se concatenan en el entrenamiento).
 
 ## Targets
 
@@ -69,8 +78,14 @@ python -m backend.scripts.training_experiments.run_experiments --all --skip-lstm
 # Full nightly run (background recommended, several hours)
 python -m backend.scripts.training_experiments.run_experiments --overnight --include-optional-boosters
 
-# Generate winners + report
+# Máxima calidad sobre los 3 CSV de entrenamiento (overnight + boosters + secuenciales + ensembles)
+python -m backend.scripts.training_experiments.run_experiments --max --from-training-csvs
+
+# Generate winners + report (diagnóstico por parcela)
 python -m backend.scripts.training_experiments.select_winners --results results/<timestamp>/results.csv
+
+# Ganador por tratamiento + snippets UVL/hyperprofiles (salida principal)
+python -m backend.scripts.training_experiments.treatment_winners --results results/<timestamp>/results.csv
 
 # Debug one station/target
 python -m backend.scripts.training_experiments.run_experiments --station RDC_62_6-3_O --target MCD --quick
@@ -79,17 +94,32 @@ python -m backend.scripts.training_experiments.run_experiments --station RDC_62_
 pytest backend/scripts/training_experiments/tests/
 ```
 
+`--max` = `--overnight` + `--include-optional-boosters` + secuenciales (sin `--skip-lstm`) + ensembles.
+`--from-training-csvs` cambia la fuente de datos a los CSV consolidados por tratamiento.
+
 Outputs:
 
 - `results.csv`: every candidate with CV, holdout and optional feature importances.
-- `winners.json`: best accepted candidate per `(station, target)`.
-- `report.md`: ranking, improvement vs baseline, top candidates and aggregate summaries.
+- `winners.json` / `report.md`: best accepted candidate per `(station, target)` (diagnóstico por parcela).
+- `treatment_winners.json` / `treatment_report.md`: **un ganador por `(tratamiento, target)`** (re-evaluado en
+  ambas parcelas por separado, sin pooling), con score combinado y mejora vs baseline.
+- `uvl_snippets.md`: atributos por tratamiento listos para pegar en el UVL activo.
+- `hyperprofiles_v2.py`: entradas para `HYPERPROFILE_REGISTRY`.
 
 ## Producción → ganadores
 
-Tras revisar `report.md`, aplicar manualmente a:
+`treatment_winners.py` ya restringe el ganador a algoritmos expresables como hyperprofile per-target
+(RandomForest, GradientBoosting/HistGB, XGBoost, LightGBM, SVR, PLSRegression, ElasticNet) y genera los
+snippets. Para aplicarlos:
 
-- `_build_gb()` y `_build_rf()` en `backend/apps/modelos/services/training_service.py`
-- LSTM arch en `_train_lstm` (líneas ~226-235)
-- `_add_temporal_features` (línea ~441) si gana variante distinta de `basic`
-- Atributos `window_size` / `preferred_algorithm` en UVL activa (`backend/uvl_versions/`)
+1. Pegar los atributos de `uvl_snippets.md` en los nodos de `Tratamiento` de
+   `backend/uvl_versions/v2_olivos_tratamientos.uvl` (`pref_alg_<target>`, `window_<target>`,
+   `feat_variant_<target>`, `hyperprofile_<target>`).
+2. Añadir las entradas de `hyperprofiles_v2.py` a `HYPERPROFILE_REGISTRY` en
+   `backend/apps/modelos/services/hyperprofile_registry.py`.
+3. Activar la versión UVL editada desde `UvlEditor.tsx`.
+
+Nota: para RandomForest y GradientBoosting/HistGB producción usa hiperparámetros fijos
+(`_build_rf`/`_build_gb`) e ignora los `params` del hyperprofile; XGBoost/LightGBM/SVR/PLSRegression/
+ElasticNet sí los respetan. El `treatment_report.md` indica además el mejor offline **sin** restricción
+(p. ej. una red), por si compensa soportarlo en producción.

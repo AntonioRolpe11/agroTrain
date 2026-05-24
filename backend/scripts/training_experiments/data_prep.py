@@ -2,8 +2,7 @@
 Per-station data preparation for offline ML experimentation.
 
 Loads the 24 sensor CSVs of a single station from `csvs/`, normalizes orthographic
-variants in filenames (`Tª_*↔Ta_*`, `Pluviómetro/Pluvómetro/PLuviómetro→Pluviometro`,
-`Dendrómetro→Dendrometro`), aggregates each sensor to daily granularity using the
+variants in filenames (`Tª_*↔Ta_*`, `Dendrómetro→Dendrometro`), aggregates each sensor to daily granularity using the
 same rules the frontend (`sensorMerger.ts`) applies, and computes MCD/TasaBuenos/
 TasaSeveros from raw dendrometer readings via `dendro_calc.py`.
 
@@ -47,7 +46,6 @@ PLATFORM_INPUTS_NO_TELEMETRY: tuple[str, ...] = (
     "humedad_Hd75",
     "tmax",
     "tmin",
-    "pluv",
     "dpv",
 )
 PLATFORM_TELEMETRY_INPUTS: tuple[str, ...] = ("NDVI", "EVI", "SAVI", "NDWI")
@@ -64,7 +62,6 @@ SENSOR_MAP: dict[str, tuple[str, str]] = {
     "Hd_55_cm": ("humedad_Hd55", "avg"),
     "Hd_65_cm": ("humedad_Hd65", "avg"),
     "Hd_75_cm": ("humedad_Hd75", "avg"),
-    "Hd_Riego": ("hd_riego", "avg"),
     # Soil temperature at depth (avg)
     "Ta_05_cm": ("temp_s05", "avg"),
     "Ta_15_cm": ("temp_s15", "avg"),
@@ -76,13 +73,8 @@ SENSOR_MAP: dict[str, tuple[str, str]] = {
     "Ta_75_cm": ("temp_s75", "avg"),
     # Air temperature → tmax/tmin
     "Ta_Ambiente": ("__air_temp__", "minmax"),
-    # Irrigation channels
-    "Riego": ("riego", "sum"),
-    "Ta_Riego": ("ta_riego", "avg"),
-    "CE_Riego": ("ce_riego", "avg"),
     # Atmosphere
     "DPV": ("dpv", "avg"),
-    "Pluviometro": ("pluv", "sum"),
     # Dendrometer → MCD / TasaBuenos / TasaSeveros via dendro_calc
     "Dendrometro": ("__dendro__", "raw"),
 }
@@ -90,9 +82,6 @@ SENSOR_MAP: dict[str, tuple[str, str]] = {
 # Orthographic normalization on the filename suffix.
 SUFFIX_REPLACEMENTS: dict[str, str] = {
     "Tª": "Ta",
-    "Pluviómetro": "Pluviometro",
-    "Pluvómetro": "Pluviometro",
-    "PLuviómetro": "Pluviometro",
     "Dendrómetro": "Dendrometro",
 }
 
@@ -166,11 +155,12 @@ def _process_dendrometer(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def list_station_files(station: str) -> list[Path]:
-    return sorted(p for p in CSV_DIR.iterdir() if p.is_file() and p.name.startswith(station + "_"))
+def list_station_files(station: str, csv_dir: Path | None = None) -> list[Path]:
+    base = csv_dir or CSV_DIR
+    return sorted(p for p in base.iterdir() if p.is_file() and p.name.startswith(station + "_"))
 
 
-def prepare_station(station: str) -> tuple[pd.DataFrame, list[str]]:
+def prepare_station(station: str, csv_dir: Path | None = None) -> tuple[pd.DataFrame, list[str]]:
     """
     Build the per-station daily DataFrame.
 
@@ -179,9 +169,10 @@ def prepare_station(station: str) -> tuple[pd.DataFrame, list[str]]:
     (MCD/TasaBuenos/TasaSeveros). Missing values stay as NaN.
     """
     warnings: list[str] = []
-    files = list_station_files(station)
+    base = csv_dir or CSV_DIR
+    files = list_station_files(station, base)
     if not files:
-        raise FileNotFoundError(f"No CSV files found for station {station} under {CSV_DIR}")
+        raise FileNotFoundError(f"No CSV files found for station {station} under {base}")
 
     daily_series: dict[str, pd.Series] = {}
     seen_suffixes: set[str] = set()
@@ -234,11 +225,6 @@ def prepare_station(station: str) -> tuple[pd.DataFrame, list[str]]:
     full_idx = pd.date_range(df_out.index.min(), df_out.index.max(), freq="D")
     df_out = df_out.reindex(full_idx)
     df_out.index.name = "date"
-    # Sum-aggregated event sensors (pluv, riego) report no row on dry/non-irrigation
-    # days; treat those gaps as zero rather than NaN so they don't drop training rows.
-    for col in ("pluv", "riego"):
-        if col in df_out.columns:
-            df_out[col] = df_out[col].fillna(0.0)
     df_out = df_out.reset_index()
     return df_out, warnings
 
