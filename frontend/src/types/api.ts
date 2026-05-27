@@ -157,6 +157,8 @@ export interface Configuracion {
   features: string[];
   geo: Record<string, unknown>;
   uvl_version: number | null;
+  uvl_version_name: string | null;
+  uvl_version_active: boolean;
   is_obsolete: boolean;
   obsolete_reason: string;
   created_at: string;

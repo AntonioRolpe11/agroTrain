@@ -211,16 +211,3 @@ function collectCsvColumns(
   }
 }
 
-export function getNodeMap(
-  node: FeatureModelNode,
-  acum = new Map<string, { node: FeatureModelNode; parent: string | null }>(),
-  parent: FeatureModelNode | null = null,
-): Map<string, { node: FeatureModelNode; parent: string | null }> {
-  acum.set(node.name, { node, parent: parent?.name ?? null });
-  for (const relation of node.relations ?? []) {
-    for (const child of relation.children ?? []) {
-      getNodeMap(child, acum, node);
-    }
-  }
-  return acum;
-}

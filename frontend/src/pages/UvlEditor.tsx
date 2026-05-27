@@ -120,6 +120,70 @@ const SECTIONS: SectionDef[] = [
   },
 ];
 
+// ── constraint step grouping ──────────────────────────────────────────────────
+
+const CONSTRAINT_STEP_ORDER = ["parcel", "sensors", "telemetry", "objective"] as const;
+type ConstraintStep = (typeof CONSTRAINT_STEP_ORDER)[number] | "other";
+
+const CONSTRAINT_STEP_LABELS: Record<ConstraintStep, string> = {
+  parcel: "Parcela",
+  sensors: "Sensores",
+  telemetry: "Telemetría",
+  objective: "Variable Objetivo",
+  other: "Global",
+};
+
+function buildFeatureStepMap(root: FeatureModelNode): Map<string, string> {
+  const map = new Map<string, string>();
+  function walk(node: FeatureModelNode, inheritedStep: string | null) {
+    const step = (node.attributes?.wizard_step as string | undefined) ?? inheritedStep;
+    if (step) map.set(node.name, step);
+    for (const rel of node.relations ?? []) {
+      for (const child of rel.children ?? []) walk(child, step);
+    }
+  }
+  walk(root, null);
+  return map;
+}
+
+function collectASTFeatureNames(node: ASTNode): string[] {
+  if (node.op === "FEATURE") return node.name ? [node.name] : [];
+  return [
+    ...(node.left ? collectASTFeatureNames(node.left) : []),
+    ...(node.right ? collectASTFeatureNames(node.right) : []),
+  ];
+}
+
+function constraintStepKey(ast: ASTNode, stepMap: Map<string, string>): ConstraintStep {
+  const features = collectASTFeatureNames(ast);
+  let maxIdx = -1;
+  for (const f of features) {
+    const idx = CONSTRAINT_STEP_ORDER.indexOf(stepMap.get(f) as never);
+    if (idx > maxIdx) maxIdx = idx;
+  }
+  return maxIdx >= 0 ? CONSTRAINT_STEP_ORDER[maxIdx] : "other";
+}
+
+function groupConstraintsByStep(
+  constraints: FeatureModelNode["constraints"],
+  tree: FeatureModelNode,
+): Record<string, string> {
+  if (!constraints?.length) return {};
+  const stepMap = buildFeatureStepMap(tree);
+  const groups: Record<string, string[]> = {};
+  for (const c of constraints) {
+    const key = constraintStepKey(c.ast as ASTNode, stepMap);
+    (groups[key] ??= []).push(astToText(c.ast as ASTNode));
+  }
+  return Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.join("\n")]));
+}
+
+function resizeTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 // ── tree helpers ──────────────────────────────────────────────────────────────
 
 const _PREC: Record<string, number> = { IMPLIES: 0, OR: 1, AND: 2, NOT: 3, FEATURE: 4 };
@@ -334,9 +398,6 @@ function LeafRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-1.5 min-w-0">
             <span className="font-mono text-sm font-medium truncate">{leaf.name}</span>
-            {attrs.label && String(attrs.label) !== leaf.name && (
-              <span className="text-xs text-muted-foreground truncate shrink-0">— {String(attrs.label)}</span>
-            )}
           </div>
           {summary && !expanded && (
             <p className="text-xs text-muted-foreground truncate mt-0.5">{summary}</p>
@@ -685,7 +746,7 @@ export default function UvlEditor() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editTree, setEditTree] = useState<FeatureModelNode | null>(null);
-  const [constraintsText, setConstraintsText] = useState("");
+  const [constraintsByStep, setConstraintsByStep] = useState<Record<string, string>>({});
   const [draftName, setDraftName] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
   const [activatingId, setActivatingId] = useState<number | null>(null);
@@ -704,10 +765,10 @@ export default function UvlEditor() {
   function handleStartCreate() {
     if (versionDetail?.tree) {
       setEditTree(structuredClone(versionDetail.tree));
-      setConstraintsText(constraintsToText(versionDetail.tree.constraints));
+      setConstraintsByStep(groupConstraintsByStep(versionDetail.tree.constraints, versionDetail.tree));
     } else {
       setEditTree(null);
-      setConstraintsText("");
+      setConstraintsByStep({});
     }
     setDraftName(`Versión ${versions.length + 1}`);
     setDraftDesc("");
@@ -727,6 +788,11 @@ export default function UvlEditor() {
       { onSuccess: v => { setIsCreating(false); setSelectedId(v.id); } },
     );
   }
+
+  const constraintsText = [...CONSTRAINT_STEP_ORDER, "other" as const]
+    .map(s => constraintsByStep[s] ?? "")
+    .filter(Boolean)
+    .join("\n");
 
   // ── render helpers ──
 
@@ -823,19 +889,31 @@ export default function UvlEditor() {
               <>
                 {renderSections(editTree, true)}
 
-                <div className="space-y-1.5">
+                <div className="space-y-3">
                   <Label className="text-xs">
                     Constraints
                     <span className="text-muted-foreground font-normal ml-1">
                       (una por línea · FeatureA =&gt; FeatureB &amp; FeatureC)
                     </span>
                   </Label>
-                  <textarea
-                    className="w-full font-mono text-xs border border-input rounded-md p-2.5 bg-background resize-y min-h-36 focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={constraintsText}
-                    onChange={e => setConstraintsText(e.target.value)}
-                    spellCheck={false}
-                  />
+                  {([...CONSTRAINT_STEP_ORDER, "other" as const] as ConstraintStep[]).map(step => (
+                    <div key={step} className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                        {CONSTRAINT_STEP_LABELS[step]}
+                      </span>
+                      <textarea
+                        ref={resizeTextarea}
+                        className="w-full font-mono text-xs border border-input rounded-md p-2.5 bg-background resize-none min-h-8 overflow-hidden focus:outline-none focus:ring-1 focus:ring-ring"
+                        value={constraintsByStep[step] ?? ""}
+                        onChange={e => {
+                          setConstraintsByStep(prev => ({ ...prev, [step]: e.target.value }));
+                          resizeTextarea(e.target);
+                        }}
+                        spellCheck={false}
+                        placeholder={`Constraints que aplican en paso ${CONSTRAINT_STEP_LABELS[step].toLowerCase()}…`}
+                      />
+                    </div>
+                  ))}
                 </div>
               </>
             ) : (
@@ -888,11 +966,23 @@ export default function UvlEditor() {
                 {renderSections(versionDetail.tree, false)}
 
                 {versionDetail.tree.constraints && versionDetail.tree.constraints.length > 0 && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-3">
                     <h3 className="text-sm font-medium">Constraints</h3>
-                    <pre className="font-mono text-xs border border-border rounded-md p-2.5 bg-muted/30 whitespace-pre-wrap">
-                      {constraintsToText(versionDetail.tree.constraints)}
-                    </pre>
+                    {(() => {
+                      const grouped = groupConstraintsByStep(versionDetail.tree.constraints, versionDetail.tree);
+                      return ([...CONSTRAINT_STEP_ORDER, "other" as const] as ConstraintStep[])
+                        .filter(step => grouped[step])
+                        .map(step => (
+                          <div key={step} className="space-y-1">
+                            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                              {CONSTRAINT_STEP_LABELS[step]}
+                            </span>
+                            <pre className="font-mono text-xs border border-border rounded-md p-2.5 bg-muted/30 whitespace-pre-wrap">
+                              {grouped[step]}
+                            </pre>
+                          </div>
+                        ));
+                    })()}
                   </div>
                 )}
               </>

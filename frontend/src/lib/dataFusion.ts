@@ -85,24 +85,6 @@ function getInterpolatedValue(
   return { value: sortedPoints[sortedPoints.length - 1].value, interpolated: true };
 }
 
-export function getSensorDateRange(
-  rows: CsvPreviewRow[],
-  headers: string[],
-): [string, string] | null {
-  const timestampCol = headers.find((h) => h.toLowerCase().trim() === "timestamp");
-  if (!timestampCol) return null;
-
-  const dates: string[] = [];
-  for (const row of rows) {
-    const date = parseSensorDate(row[timestampCol] ?? "");
-    if (date) dates.push(date);
-  }
-
-  if (dates.length === 0) return null;
-  dates.sort();
-  return [dates[0], dates[dates.length - 1]];
-}
-
 export function csvRowsToTelemetryPoints(
   rows: CsvPreviewRow[],
   headers: string[],

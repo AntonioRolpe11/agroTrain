@@ -248,6 +248,26 @@ export default function DigitalSensorCreation() {
                         <p className="text-xs text-muted-foreground">
                           {new Date(cfg.updated_at).toLocaleString("es-ES")}
                         </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              cfg.uvl_version_active
+                                ? "bg-sensor-green/10 text-sensor-green"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                            title={cfg.uvl_version_active ? "Versión UVL activa" : "Versión UVL no activa"}
+                          >
+                            {cfg.uvl_version_name ?? "Sin versión"}
+                          </span>
+                          {cfg.is_obsolete && (
+                            <span
+                              className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+                              title={cfg.obsolete_reason || "Configuración obsoleta"}
+                            >
+                              Obsoleta
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <Button

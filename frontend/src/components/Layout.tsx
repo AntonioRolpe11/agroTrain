@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { path: "/creacion-sensor-digital", label: "Creación sensor digital" },
   { path: "/validacion-modelo", label: "Validación del modelo" },
   { path: "/mis-modelos", label: "Mis modelos" },
-  { path: "/arquitectura", label: "Arquitectura" },
 ];
 
 export default function Layout() {
@@ -149,7 +148,7 @@ export default function Layout() {
 
       <footer className="border-t border-border bg-card">
         <div className="w-full px-[36px] py-6 text-center text-xs text-muted-foreground sm:px-[44px] lg:px-[52px] xl:px-[60px] 2xl:px-[68px]">
-          TFG · Configurador de sensores virtuales basado en UVL/Flamapy
+          Configurador de sensores virtuales basado en UVL/Flamapy
         </div>
       </footer>
     </div>

@@ -748,8 +748,7 @@ export default function Results() {
         </section>
 
         {/* 3. Fusión */}
-        {canFuse && (
-          <section className="config-block animate-reveal-up" style={{ animationDelay: "165ms" }}>
+        <section className={`config-block animate-reveal-up transition-opacity${canFuse ? "" : " opacity-50"}`} style={{ animationDelay: "165ms" }}>
             <div className="mb-5 flex items-start gap-3">
               <div className="rounded-lg bg-primary/10 p-2 text-olive"><GitMerge className="h-5 w-5" /></div>
               <div>
@@ -757,18 +756,27 @@ export default function Results() {
                 <p className="text-sm text-muted-foreground">Unifica los archivos de sensores a resolución diaria y combínalos con telemetría alineando por fecha.</p>
               </div>
             </div>
-            <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-olive" />
-                {mergedSensors?.dateRange ? (
-                  <p>Rango de datos de sensores: <span className="font-medium text-foreground">{mergedSensors.dateRange[0]}</span> — <span className="font-medium text-foreground">{mergedSensors.dateRange[1]}</span>. Se añadirán las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
-                ) : (
-                  <p>Todos los archivos de sensor están listos. Se unificarán a resolución diaria y se fusionarán con las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
-                )}
+            {!canFuse ? (
+              <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{!allSensorFilesReady ? "Carga todos los archivos de sensor requeridos para poder fusionar." : "Extrae o carga los datos de telemetría antes de fusionar."}</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-olive" />
+                  {mergedSensors?.dateRange ? (
+                    <p>Rango de datos de sensores: <span className="font-medium text-foreground">{mergedSensors.dateRange[0]}</span> — <span className="font-medium text-foreground">{mergedSensors.dateRange[1]}</span>. Se añadirán las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
+                  ) : (
+                    <p>Todos los archivos de sensor están listos. Se unificarán a resolución diaria y se fusionarán con las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
+              <Button onClick={handleFuse} disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
               {fusionResult && (
                 <Button variant="outline" onClick={handleDownloadFusion}><FileDown className="mr-2 h-4 w-4" />Descargar CSV fusionado</Button>
               )}
@@ -832,8 +840,7 @@ export default function Results() {
                 </div>
               </div>
             )}
-          </section>
-        )}
+        </section>
 
         {/* 4. Calidad */}
         <section className="config-block animate-reveal-up" style={{ animationDelay: "200ms" }}>

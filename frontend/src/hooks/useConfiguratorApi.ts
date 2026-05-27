@@ -4,13 +4,11 @@ import { configuratorApi } from "@/services/configuratorApi";
 import type {
   FeatureModelNode,
   MunicipioViewportResponse,
-  PartialValidationRequest,
   ProvinciaOption,
   TelemetryExtractRequest,
   ValidateFeaturesRequest,
   ValidateResponse,
 } from "@/types/api";
-import type { ConfigState } from "@/types/config";
 
 const GEO_STALE_TIME = 5 * 60 * 1000;
 
@@ -63,18 +61,6 @@ export function useMunicipioViewportQuery(
     staleTime: GEO_STALE_TIME,
     refetchOnWindowFocus: false,
   });
-}
-
-export function useValidateConfigMutation() {
-  return useMutation<ValidateResponse, Error, ConfigState>(
-    createMutationOptions((config) => configuratorApi.validateConfig(config)),
-  );
-}
-
-export function useValidatePartialConfigMutation() {
-  return useMutation<ValidateResponse, Error, PartialValidationRequest>(
-    createMutationOptions((payload) => configuratorApi.validatePartialConfig(payload)),
-  );
 }
 
 export function useExtractTelemetryMutation() {
