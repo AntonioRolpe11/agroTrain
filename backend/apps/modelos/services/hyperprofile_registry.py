@@ -136,6 +136,7 @@ HYPERPROFILE_REGISTRY: dict[str, dict[str, Any]] = {
                             "humedad_Hd45", "humedad_Hd55", "humedad_Hd65", "humedad_Hd75",
                             "tmax", "tmin", "dpv"],
         "params": {"C": 100.0, "epsilon": 0.01, "gamma": "scale", "kernel": "linear"},
+        "max_samples": 2000,
     },
 }
 
