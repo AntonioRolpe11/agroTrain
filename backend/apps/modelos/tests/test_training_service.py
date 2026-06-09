@@ -15,6 +15,7 @@ from apps.modelos.services.training_service import (
     _build_estimator,
     _compute_metrics,
     _desescalar_parcial,
+    _despike_isolated,
     _interpolate_sensor_gaps,
     _merge_target_profiles,
     get_training_status,
@@ -50,6 +51,26 @@ class TestHelpers:
         df = pd.DataFrame({"humedad_Hd05": [1.0, None, None, 5.0, 6.0]})
         out = _interpolate_sensor_gaps(df, ["humedad_Hd05"])
         assert out["humedad_Hd05"].isna().sum() == 0
+
+    def test_interpolate_sensor_gaps_zero_fills_event_columns(self):
+        # riego/lluvia con fill_strategy='zero': día sin evento -> 0, sin interpolar.
+        df = pd.DataFrame({"riego": [None, 2.0, None, None, 8.0, None]})
+        out = _interpolate_sensor_gaps(df, ["riego"], zero_fill_cols={"riego"})
+        assert out["riego"].tolist() == [0.0, 2.0, 0.0, 0.0, 8.0, 0.0]
+
+    def test_despike_isolated_corrects_one_day_spike(self):
+        # Ruido diario pequeño + un pico aislado enorme -> se sustituye por media de vecinos.
+        s = pd.Series([100.0, 101.0, 99.0, 100.0, 98.0, 900.0, 100.0, 101.0, 99.0, 100.0])
+        out, n = _despike_isolated(s)
+        assert n == 1
+        assert out.iloc[5] == pytest.approx((98.0 + 100.0) / 2.0)  # media de vecinos
+
+    def test_despike_isolated_keeps_real_trend(self):
+        # Escalón sostenido (cambio real): vecinos NO son similares entre sí -> no se toca.
+        s = pd.Series([100.0, 101.0, 99.0, 100.0, 200.0, 201.0, 199.0, 200.0])
+        out, n = _despike_isolated(s)
+        assert n == 0
+        assert out.tolist() == s.tolist()
 
     def test_compute_metrics_returns_keys(self):
         y_true = np.array([1, 2, 3, 4, 5])

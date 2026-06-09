@@ -65,6 +65,16 @@ class TestCsvColumns:
         assert FlamapyService.get_csv_columns("Tratamiento") == []
 
 
+class TestZeroFillColumns:
+    def test_returns_csv_cols_with_fill_strategy_zero(self):
+        FlamapyService.warm_up(FIXTURE_PATH)
+        assert FlamapyService.get_zero_fill_columns() == {"dpv"}
+
+    def test_excludes_columns_without_attr(self):
+        FlamapyService.warm_up(FIXTURE_PATH)
+        assert "MCD" not in FlamapyService.get_zero_fill_columns()
+
+
 class TestProfiles:
     def test_get_treatment_profile_secano(self):
         FlamapyService.warm_up(FIXTURE_PATH)

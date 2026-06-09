@@ -80,9 +80,9 @@ export function StepObjetivo({
             >
               <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                Para <span className="font-medium">{r.label}</span> se recomienda usar solo{" "}
-                <span className="font-medium">{r.sensors.join(", ")}</span>. Otros sensores
-                pueden añadir ruido y empeorar la predicción.
+                Para <span className="font-medium">{r.label}</span> se recomienda usar{" "}
+                <span className="font-medium">{r.sensors.join(", ")}</span>, que suelen dar
+                las mejores predicciones para este objetivo.
               </span>
             </div>
           ))}

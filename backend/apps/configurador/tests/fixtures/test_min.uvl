@@ -22,7 +22,7 @@ features
 							DatoTB { label 'Dato Tasa Buenos', csv_col 'TasaBuenos' }
 				optional
 					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
-					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
+					DPV { label 'Déficit de presión de vapor', csv_col 'dpv', fill_strategy 'zero' }
 		mandatory
 			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
 				optional

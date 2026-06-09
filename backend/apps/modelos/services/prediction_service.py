@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .storage_service import StorageService
-from .training_service import _add_temporal_features, _desescalar_parcial
+from .training_service import DESPIKE_COLUMNS, _add_temporal_features, _despike_isolated, _desescalar_parcial
 
 
 class PredictionServiceError(RuntimeError):
@@ -84,11 +84,24 @@ class PredictionService:
         predicted_for_date: Any,
     ) -> dict[str, float]:
         from apps.modelos.services.feature_engineering import add_features
+        from apps.configurador.services.flamapy_service import FlamapyService
 
         models, scalers = self._storage.load_sklearn(model_id, targets)
         feature_columns_by_target = metadata.get("feature_columns_by_target") or {}
         target_profiles_meta: dict[str, dict] = metadata.get("target_profiles") or {}
         predictions: dict[str, float] = {}
+
+        # Coherencia con el entrenamiento: sensores de evento (riego/lluvia) con día sin dato = 0,
+        # y despike de picos aislados del dendrómetro (MCD) antes de construir características.
+        df = df.copy()
+        if "date" in df.columns:
+            df = df.sort_values("date").reset_index(drop=True)
+        for col in FlamapyService.get_zero_fill_columns():
+            if col in df.columns:
+                df[col] = df[col].fillna(0.0)
+        for col in DESPIKE_COLUMNS:
+            if col in df.columns:
+                df[col], _ = _despike_isolated(df[col])
 
         for target in targets:
             tp = target_profiles_meta.get(target) or {}

@@ -149,6 +149,14 @@ class TrainingService:
         if missing:
             raise ModelosServiceError(f"Columnas ausentes en CSV: {missing}")
 
+        # Orden temporal (los lags/rolling dependen del orden por fecha) y despike de picos
+        # aislados del dendrómetro (MCD) antes de cualquier feature.
+        if "date" in df.columns:
+            df = df.sort_values("date").reset_index(drop=True)
+        for col in DESPIKE_COLUMNS:
+            if col in df.columns:
+                df[col], _ = _despike_isolated(df[col])
+
         # Build per-target profiles from UVL treatment attributes
         treatment_target_profiles: dict[str, dict] = {
             t: FlamapyService.get_treatment_target_profile(treatment, t)
@@ -212,8 +220,11 @@ class TrainingService:
     ) -> None:
         from apps.modelos.services.hyperprofile_registry import UnknownHyperprofileError, get_hyperprofile
         from apps.modelos.services.feature_engineering import add_features
+        from apps.configurador.services.flamapy_service import FlamapyService
 
         _update_registry(model_id, phase="preparando datos por target")
+
+        zero_fill_cols = FlamapyService.get_zero_fill_columns()
 
         sk_models: dict[str, Any] = {}
         sk_scalers: dict[str, MinMaxScaler] = {}
@@ -264,7 +275,7 @@ class TrainingService:
             date_col = ["date"] if "date" in df.columns else []
             df_base = df[date_col + lag_sources].copy()
             if not is_target_only:
-                df_base = _interpolate_sensor_gaps(df_base, input_features)
+                df_base = _interpolate_sensor_gaps(df_base, input_features, zero_fill_cols)
             df_base = df_base.dropna(subset=lag_sources)
 
             if algorithm == "SVR" and len(df_base) > 500:
@@ -719,19 +730,71 @@ def _merge_target_profiles(target_profiles: list[dict]) -> dict:
     return merged
 
 
-def _interpolate_sensor_gaps(df: pd.DataFrame, input_features: list[str]) -> pd.DataFrame:
+DESPIKE_K = 5.0
+DESPIKE_NEIGHBOR_FACTOR = 0.5
+# Columnas derivadas del dendrómetro con picos aislados de 1 día (errores de sensor) que se
+# corrigen antes de entrenar. Lógica de dominio del dendrómetro (como dendroCalc.ts), hardcodeada.
+DESPIKE_COLUMNS = ("MCD",)
+
+
+def _despike_isolated(
+    s: pd.Series, k: float = DESPIKE_K, neighbor_factor: float = DESPIKE_NEIGHBOR_FACTOR
+) -> tuple[pd.Series, int]:
+    """
+    Corrige picos AISLADOS de 1 día (errores del dendrómetro) sustituyéndolos por la media de los
+    vecinos. Un árbol no se contrae/ensancha cientos de µm y vuelve al día siguiente.
+
+    Criterio conservador (no toca cambios reales de tendencia):
+        |x − media(vecinos)| > k · MAD(diferencias diarias)  Y  |prev − next| < neighbor_factor · dev
+    """
+    x = s.astype(float).to_numpy()
+    n = len(x)
+    if n < 3:
+        return s, 0
+    diffs = np.abs(np.diff(x))
+    diffs = diffs[~np.isnan(diffs)]
+    if diffs.size == 0:
+        return s, 0
+    mad = 1.4826 * np.median(np.abs(diffs - np.median(diffs)))
+    if mad <= 0:
+        return s, 0
+    thr = k * mad
+    out = x.copy()
+    count = 0
+    for i in range(1, n - 1):
+        a, b, v = x[i - 1], x[i + 1], x[i]
+        if np.isnan(a) or np.isnan(b) or np.isnan(v):
+            continue
+        mid = (a + b) / 2.0
+        dev = abs(v - mid)
+        if dev > thr and abs(a - b) < neighbor_factor * dev:
+            out[i] = round(mid, 4)
+            count += 1
+    return pd.Series(out, index=s.index), count
+
+
+def _interpolate_sensor_gaps(
+    df: pd.DataFrame,
+    input_features: list[str],
+    zero_fill_cols: set[str] | None = None,
+) -> pd.DataFrame:
     """
     Fill short sensor outages before feature engineering.
     Only applied to input feature columns — never to target variables.
 
+    zero_fill_cols (UVL fill_strategy='zero', e.g. riego/lluvia): event/cumulative sensors
+        where a day without record means 0 (no irrigation/rain), not a gap to interpolate.
     humedad_*: linear interpolation, limit=5 days (slow-varying soil moisture).
     everything else: linear interpolation, limit=3 days.
     """
+    zero_fill_cols = zero_fill_cols or set()
     df = df.copy()
     for col in input_features:
         if col not in df.columns:
             continue
-        if col.startswith("humedad_"):
+        if col in zero_fill_cols:
+            df[col] = df[col].fillna(0.0)
+        elif col.startswith("humedad_"):
             df[col] = df[col].interpolate(method="linear", limit=5, limit_direction="both")
         else:
             df[col] = df[col].interpolate(method="linear", limit=3, limit_direction="both")

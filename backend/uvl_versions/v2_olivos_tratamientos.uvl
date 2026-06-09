@@ -38,8 +38,8 @@ features
 							Hd75 { label '75 cm', csv_col 'humedad_Hd75' }
 					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
 					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
-					Riego { label 'Riego', csv_col 'riego' }
-					Pluviometro { label 'Pluviómetro', csv_col 'lluvia' }
+					Riego { label 'Riego', csv_col 'riego', fill_strategy 'zero' }
+					Pluviometro { label 'Pluviómetro', csv_col 'lluvia', fill_strategy 'zero' }
 		mandatory
 			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
 				optional
@@ -69,6 +69,7 @@ constraints
 	TasaBuenos => DatoTB
 	TasaSeveros => DatoTS
 	MCD => DatoMCD
+	MCD => (TemperaturaAire & DPV)
 	NDWI => (NDVI | EVI | SAVI)
 	Calcisoles => (SAVI & NDWI)
 	Luvisoles => (NDVI | EVI)

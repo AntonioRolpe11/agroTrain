@@ -260,6 +260,33 @@ class FlamapyService:
             return []
 
     @classmethod
+    def get_zero_fill_columns(cls) -> set[str]:
+        """CSV columns of sensors with fill_strategy='zero' (event/cumulative: riego, lluvia).
+
+        A day without a record for these means 0 (no irrigation/rain), not a gap to interpolate.
+        Derived from the UVL ParametrosEntrada subtree — no hardcoded column names.
+        """
+        with cls._state_lock:
+            if cls._base_fm_model is None:
+                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
+            parent = cls._find_feature(cls._base_fm_model.root, "ParametrosEntrada")
+            if parent is None:
+                return set()
+            cols: set[str] = set()
+            for feat_name in cls._collect_all_feature_names(parent):
+                node = cls._find_feature(parent, feat_name)
+                if node is None:
+                    continue
+                attrs = {a.name: a.default_value for a in node.get_attributes() if a.default_value}
+                if attrs.get("fill_strategy") != "zero":
+                    continue
+                if attrs.get("csv_col"):
+                    cols.add(attrs["csv_col"])
+                elif attrs.get("csv_cols"):
+                    cols.update(c.strip() for c in attrs["csv_cols"].split(","))
+            return cols
+
+    @classmethod
     def get_quality_thresholds(cls, target_name: str) -> dict | None:
         """R² quality thresholds for an objective variable, from its quality_min/quality_good UVL attributes."""
         with cls._state_lock:
