@@ -138,6 +138,53 @@ HYPERPROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "params": {"C": 100.0, "epsilon": 0.01, "gamma": "scale", "kernel": "linear"},
         "max_samples": 2000,
     },
+    # ── v3 (sensores riego+lluvia, búsqueda buscar_config_sensores.py, 2026-06-08) ────────────
+    # TasaBuenos y TasaSeveros pasan de target_only a modelos que usan riego/lluvia como entrada
+    # (decisión de diseño del usuario: preferir variables físicas frente a autorregresión pura).
+    # required_inputs=[] a propósito: riego/lluvia no están en todas las parcelas (graceful).
+    "control_tasabuenos_elasticnet_v3": {
+        "algorithm": "ElasticNet",
+        "feature_variant": "full",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {"alpha": 0.01, "l1_ratio": 0.5, "max_iter": 20000},
+    },
+    "control_tasaseveros_gb_v3": {
+        "algorithm": "GradientBoosting",
+        "feature_variant": "basic",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {},
+    },
+    "rdc_tasabuenos_rf_v3": {
+        "algorithm": "RandomForest",
+        "feature_variant": "full",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {},
+    },
+    "rdc_tasaseveros_gb_v3": {
+        "algorithm": "GradientBoosting",
+        "feature_variant": "full",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {},
+    },
+    "secano_tasabuenos_svr_v3": {
+        "algorithm": "SVR",
+        "feature_variant": "stress_indices",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {"C": 100.0, "epsilon": 0.1, "gamma": "auto", "kernel": "linear"},
+        "max_samples": 2000,
+    },
+    "secano_tasaseveros_gb_v3": {
+        "algorithm": "GradientBoosting",
+        "feature_variant": "full",
+        "required_inputs": [],
+        "optional_inputs": ["riego", "lluvia", "tmax", "tmin", "dpv", "humedad_Hd35"],
+        "params": {},
+    },
 }
 
 

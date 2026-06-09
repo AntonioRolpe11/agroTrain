@@ -52,6 +52,10 @@ import { ValSeriesChart } from "@/components/results/ValSeriesChart";
 import { getNode, getRelationChildren, buildCsvColumnInfo, buildTreatmentTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
 
 const TEMPERATURE_FEATURE_ID = "TemperaturaAire";
+// Sensores de evento (riego, lluvia): el valor diario es la SUMA de los eventos del día, no la media.
+// Hardcode por csv_col, mismo patrón que TemperaturaAire (min/max) — agregación especial no expresable
+// genéricamente en el UVL.
+const SUM_AGGREGATED_COLS = new Set(["riego", "lluvia"]);
 
 interface SensorFileEntry {
   dataset: GenericCsvDataset | null;
@@ -265,7 +269,7 @@ export default function Results() {
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];
       if (e?.dataset && e.timestampCol && e.dataCol) {
-        inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol });
+        inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol, aggregation: SUM_AGGREGATED_COLS.has(sensor.csvCol) ? "sum" : undefined });
       }
     }
     if (tempRequired && tempFile.dataset && tempFile.timestampCol && tempFile.dataCol) {
@@ -414,7 +418,7 @@ export default function Results() {
     }
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];
-      if (e?.dataset && e.timestampCol && e.dataCol) inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol });
+      if (e?.dataset && e.timestampCol && e.dataCol) inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol, aggregation: SUM_AGGREGATED_COLS.has(sensor.csvCol) ? "sum" : undefined });
     }
     if (tempRequired && tempFile.dataset && tempFile.timestampCol && tempFile.dataCol) {
       inputs.push({ canonicalCol: "tmin", dataset: tempFile.dataset, timestampCol: tempFile.timestampCol, dataCol: tempFile.dataCol, aggregation: "min" });

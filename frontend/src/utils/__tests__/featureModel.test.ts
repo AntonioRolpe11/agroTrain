@@ -5,6 +5,7 @@ import {
   buildAccumulatedScope,
   buildCsvColumnInfo,
   buildLabelMap,
+  buildObjectiveRecommendations,
   buildTreatmentTrainingThresholds,
   collectCsvFeatures,
   collectFeatureNames,
@@ -192,5 +193,65 @@ describe("buildCsvColumnInfo", () => {
   it("returns empty when parent not found", () => {
     const result = buildCsvColumnInfo(tree, "Unknown");
     expect(result.dataColumns).toEqual([]);
+  });
+});
+
+const objetivoTree: FeatureModelNode = {
+  name: "Entrada",
+  attributes: {},
+  relations: [
+    {
+      type: "MANDATORY",
+      children: [
+        {
+          name: "ParametrosEntrada",
+          attributes: {},
+          relations: [
+            {
+              type: "OPTIONAL",
+              children: [
+                { name: "Dendrometro", attributes: { label: "Dendrómetro" }, relations: [] },
+                { name: "Pluviometro", attributes: { label: "Pluviómetro" }, relations: [] },
+              ],
+            },
+          ],
+        },
+        {
+          name: "VariableObjetivo",
+          attributes: { label: "Variable objetivo" },
+          relations: [
+            {
+              type: "ALTERNATIVE",
+              children: [
+                {
+                  name: "TasaBuenos",
+                  attributes: { label: "Tasa de buenos", recommended_sensors: "Dendrometro,Pluviometro" },
+                  relations: [],
+                },
+                { name: "MCD", attributes: { label: "MCD" }, relations: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+describe("buildObjectiveRecommendations", () => {
+  it("maps recommended_sensors of the selected objective to labels", () => {
+    const recs = buildObjectiveRecommendations(objetivoTree, ["TasaBuenos"]);
+    expect(recs).toHaveLength(1);
+    expect(recs[0].feature).toBe("TasaBuenos");
+    expect(recs[0].label).toBe("Tasa de buenos");
+    expect(recs[0].sensors).toEqual(["Dendrómetro", "Pluviómetro"]);
+  });
+
+  it("returns [] when selected objective has no recommended_sensors", () => {
+    expect(buildObjectiveRecommendations(objetivoTree, ["MCD"])).toEqual([]);
+  });
+
+  it("returns [] when no objective is selected", () => {
+    expect(buildObjectiveRecommendations(objetivoTree, ["Dendrometro"])).toEqual([]);
   });
 });
