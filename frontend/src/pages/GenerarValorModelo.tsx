@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { SensorFileCard } from "@/components/config/SensorFileCard";
+import { SensorLocationMap } from "@/components/results/SensorLocationMap";
 import { TelemetryPreview } from "@/components/results/TelemetryPreview";
 import { Button } from "@/components/ui/button";
 import { StatusTag } from "@/components/ui/StatusTag";
@@ -315,6 +316,8 @@ export default function GenerarValorModelo() {
       </div>
 
       <div className="space-y-8">
+        <SensorLocationMap punto={punto} />
+
         <section className="config-block">
           <div className="mb-5 flex items-start gap-3">
             <div className="rounded-lg bg-primary/10 p-2 text-olive"><TreeDeciduous className="h-5 w-5" /></div>

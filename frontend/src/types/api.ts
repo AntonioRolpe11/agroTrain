@@ -216,6 +216,9 @@ export interface ModelMetadata {
   treatment: string;
   features?: string[];
   geo?: Record<string, unknown> & {
+    nombre?: string;
+    provinciaNombre?: string | null;
+    municipioNombre?: string | null;
     punto?: { lat: number; lng: number } | null;
     cloudThreshold?: number;
   };
