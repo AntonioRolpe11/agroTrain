@@ -598,7 +598,7 @@ export default function Results() {
                       )}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Algoritmo asociado al objetivo. Si LSTM no es viable (TensorFlow ausente o datos insuficientes) el sistema empleará RandomForest automáticamente.
+                      Algoritmo asociado al objetivo, derivado del UVL.
                     </p>
                   </div>
                 );
@@ -803,7 +803,7 @@ export default function Results() {
                   if (fusedDataLevel === "warn") return (
                     <div className="rounded-lg border border-satellite-amber/30 bg-satellite-amber/10 p-4 text-sm text-satellite-amber">
                       <p className="font-semibold">Datos limitados — calidad del modelo reducida</p>
-                      <p className="mt-1">Con <strong>{fusionResult.rowCount} filas</strong> el modelo puede entrenarse, pero los resultados serán poco fiables. Se usará RandomForest automáticamente (LSTM requiere al menos <strong>{t.minWarn}</strong> filas). Para resultados sólidos se recomiendan <strong>{t.minGood}+</strong> filas.</p>
+                      <p className="mt-1">Con <strong>{fusionResult.rowCount} filas</strong> el modelo puede entrenarse, pero los resultados serán poco fiables (se recomiendan al menos <strong>{t.minWarn}</strong> filas). Para resultados sólidos se recomiendan <strong>{t.minGood}+</strong> filas.</p>
                     </div>
                   );
                   if (fusedDataLevel === "acceptable") return (

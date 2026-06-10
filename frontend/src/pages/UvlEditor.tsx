@@ -36,14 +36,13 @@ type SectionDef = {
 };
 
 const FEAT_VARIANTS = [
-  "basic", "long_lags", "multi_roll", "ema", "calendar",
-  "irrigation_memory", "soil_profile", "stress_indices",
-  "robust_smoothing", "target_only", "full",
+  "basic", "ema", "soil_profile", "stress_indices",
+  "target_only", "full",
 ];
 
 const ALGORITHMS = [
-  "XGBoost", "SVR", "LightGBM", "PLSRegression",
-  "ElasticNet", "RandomForest", "GradientBoosting", "LSTM",
+  "SVR", "PLSRegression", "ElasticNet",
+  "RandomForest", "GradientBoosting",
 ];
 
 const SECTIONS: SectionDef[] = [

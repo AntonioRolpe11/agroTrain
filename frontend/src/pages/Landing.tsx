@@ -22,7 +22,7 @@ const features = [
     icon: BrainCircuit,
     title: "Entrenamiento ML",
     description:
-      "Entrena modelos LSTM o Gradient Boosting por variable objetivo. Algoritmo, ventana temporal y umbrales de calidad derivan del UVL — sin parámetros hardcodeados en Python.",
+      "Entrena un modelo por variable objetivo. Algoritmo, ventana temporal y umbrales de calidad derivan del UVL — sin parámetros hardcodeados en Python.",
     chipClass: "sensor-chip-virtual",
   },
   {
