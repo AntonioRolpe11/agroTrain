@@ -64,10 +64,10 @@ def test_lags_use_shifted_values():
     )
 
 
-def test_irrigation_memory_produces_lags_rolling():
-    """irrigation_memory variant produces lags and rolling without crashing."""
+def test_basic_produces_lags_rolling():
+    """basic variant produces lags, rolling and day-of-year without crashing."""
     df = _base_df()
-    result = add_features(df.copy(), ["MCD", "tmax", "dpv"], window_size=3, variant="irrigation_memory")
+    result = add_features(df.copy(), ["MCD", "tmax", "dpv"], window_size=3, variant="basic")
     assert "MCD_lag1" in result.columns
     assert "MCD_roll3d" in result.columns
     assert "day_sin" in result.columns

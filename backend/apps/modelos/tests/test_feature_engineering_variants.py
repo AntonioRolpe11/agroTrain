@@ -41,8 +41,8 @@ def test_each_variant_produces_dataframe(base_df, variant):
         assert "tmax_lag1" in out.columns
 
 
-def test_calendar_variant_includes_month_and_week(base_df):
-    out = add_features(base_df, ["MCD"], 5, "calendar")
+def test_full_variant_includes_month_and_week(base_df):
+    out = add_features(base_df, ["MCD"], 5, "full")
     assert "month" in out.columns
     assert "weekofyear" in out.columns
     assert "agro_season" in out.columns
@@ -62,8 +62,8 @@ def test_stress_indices_variant(base_df):
     assert "dpv_x_tmax" in out.columns
 
 
-def test_robust_smoothing_variant(base_df):
-    out = add_features(base_df, ["MCD"], 5, "robust_smoothing")
+def test_full_variant_includes_robust_smoothing(base_df):
+    out = add_features(base_df, ["MCD"], 5, "full")
     assert "MCD_median3d" in out.columns
     assert "MCD_diff1d" in out.columns
 

@@ -12,14 +12,9 @@ import pandas as pd
 
 VARIANTS: tuple[str, ...] = (
     "basic",
-    "long_lags",
-    "multi_roll",
     "ema",
-    "calendar",
-    "irrigation_memory",
     "soil_profile",
     "stress_indices",
-    "robust_smoothing",
     "target_only",
     "full",
 )
@@ -159,30 +154,11 @@ def add_features(
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
         out = _add_rolling(out, feature_cols, base_roll)
-    elif variant == "long_lags":
-        out = _add_day_of_year_cyclical(out)
-        extra = [lag for lag in (14, 21, 28) if lag not in base_lags]
-        out = _add_lags(out, feature_cols, base_lags + extra)
-        out = _add_rolling(out, feature_cols, base_roll)
-    elif variant == "multi_roll":
-        out = _add_day_of_year_cyclical(out)
-        out = _add_lags(out, feature_cols, base_lags)
-        rolls = sorted({3, 7, 14, 30, *base_roll})
-        out = _add_rolling(out, feature_cols, rolls)
     elif variant == "ema":
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
         out = _add_rolling(out, feature_cols, base_roll)
         out = _add_ema(out, feature_cols, [0.3, 0.7])
-    elif variant == "calendar":
-        out = _add_day_of_year_cyclical(out)
-        out = _add_calendar(out)
-        out = _add_lags(out, feature_cols, base_lags)
-        out = _add_rolling(out, feature_cols, base_roll)
-    elif variant == "irrigation_memory":
-        out = _add_day_of_year_cyclical(out)
-        out = _add_lags(out, feature_cols, base_lags)
-        out = _add_rolling(out, feature_cols, base_roll)
     elif variant == "soil_profile":
         out = _add_day_of_year_cyclical(out)
         out = _add_lags(out, feature_cols, base_lags)
@@ -193,11 +169,6 @@ def add_features(
         out = _add_lags(out, feature_cols, base_lags)
         out = _add_rolling(out, feature_cols, base_roll)
         out = _add_stress_indices(out)
-    elif variant == "robust_smoothing":
-        out = _add_day_of_year_cyclical(out)
-        out = _add_lags(out, feature_cols, base_lags)
-        out = _add_rolling(out, feature_cols, base_roll)
-        out = _add_robust_smoothing(out, feature_cols)
     elif variant == "target_only":
         # Pure autoregressive: no calendar, no external sensors.
         # feature_cols[:1] is the target column.
