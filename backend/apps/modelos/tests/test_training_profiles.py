@@ -25,10 +25,10 @@ from apps.modelos.services.training_service import _build_estimator, ModelosServ
 # ── hyperprofile_registry ──────────────────────────────────────────────────────
 
 def test_get_hyperprofile_returns_copy():
-    hp = get_hyperprofile("control_mcd_xgb_v1")
-    hp["params"]["n_estimators"] = 999
+    hp = get_hyperprofile("secano_mcd_pls_v1")
+    hp["params"]["n_components"] = 999
     # original must be untouched
-    assert HYPERPROFILE_REGISTRY["control_mcd_xgb_v1"]["params"]["n_estimators"] == 600
+    assert HYPERPROFILE_REGISTRY["secano_mcd_pls_v1"]["params"]["n_components"] == 8
 
 
 def test_get_hyperprofile_unknown_raises():
