@@ -47,6 +47,8 @@ PLATFORM_INPUTS_NO_TELEMETRY: tuple[str, ...] = (
     "tmax",
     "tmin",
     "dpv",
+    "riego",
+    "lluvia",
 )
 PLATFORM_TELEMETRY_INPUTS: tuple[str, ...] = ("NDVI", "EVI", "SAVI", "NDWI")
 
@@ -75,6 +77,9 @@ SENSOR_MAP: dict[str, tuple[str, str]] = {
     "Ta_Ambiente": ("__air_temp__", "minmax"),
     # Atmosphere
     "DPV": ("dpv", "avg"),
+    # Riego y lluvia (eventos) → suma diaria
+    "Riego": ("riego", "sum"),
+    "Pluviómetro": ("lluvia", "sum"),
     # Dendrometer → MCD / TasaBuenos / TasaSeveros via dendro_calc
     "Dendrometro": ("__dendro__", "raw"),
 }
