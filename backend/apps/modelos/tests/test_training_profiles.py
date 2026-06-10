@@ -76,24 +76,6 @@ def test_build_estimator_unknown_raises():
         _build_estimator("FakeAlgorithm", {})
 
 
-def test_build_estimator_xgb_fallback_when_unavailable(monkeypatch):
-    monkeypatch.setattr("apps.modelos.services.training_service.XGB_AVAILABLE", False)
-    warnings_out: list[str] = []
-    est = _build_estimator("XGBoost", {}, warnings_out=warnings_out, target="MCD")
-    from sklearn.ensemble import HistGradientBoostingRegressor
-    assert isinstance(est, HistGradientBoostingRegressor)
-    assert any("XGBoost" in w for w in warnings_out)
-
-
-def test_build_estimator_lgb_fallback_when_unavailable(monkeypatch):
-    monkeypatch.setattr("apps.modelos.services.training_service.LGB_AVAILABLE", False)
-    warnings_out: list[str] = []
-    est = _build_estimator("LightGBM", {}, warnings_out=warnings_out, target="TasaSeveros")
-    from sklearn.ensemble import HistGradientBoostingRegressor
-    assert isinstance(est, HistGradientBoostingRegressor)
-    assert any("LightGBM" in w for w in warnings_out)
-
-
 # ── per-target prediction backward compat ─────────────────────────────────────
 
 def _write_per_target_model(

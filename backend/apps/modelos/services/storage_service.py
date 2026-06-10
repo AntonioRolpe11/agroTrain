@@ -105,24 +105,6 @@ class StorageService:
                 raise StorageError("ZIP contiene rutas no permitidas (ZipSlip).")
         zf.extractall(target_dir)
 
-    # ------------------------------------------------------------------ LSTM
-
-    def save_lstm(self, model_id: str, models: dict, scalers: dict) -> None:
-        d = self._model_dir(model_id, create=True)
-        for target, model in models.items():
-            model.save(d / f"lstm_{target}.keras")
-        for name, scaler in scalers.items():
-            joblib.dump(scaler, d / f"scaler_{name}.pkl")
-
-    def load_lstm(self, model_id: str, targets: list[str]) -> tuple[dict, Any, dict]:
-        from tensorflow.keras.models import load_model  # type: ignore
-
-        d = self._model_dir(model_id)
-        lstm_models = {t: load_model(d / f"lstm_{t}.keras") for t in targets}
-        scaler_X = joblib.load(d / "scaler_X.pkl")
-        scaler_Y = {t: joblib.load(d / f"scaler_{t}.pkl") for t in targets}
-        return lstm_models, scaler_X, scaler_Y
-
     # --------------------------------------------------------------- sklearn
 
     def save_sklearn(self, model_id: str, models: dict[str, Any], scalers: dict[str, Any]) -> None:

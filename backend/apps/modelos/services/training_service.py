@@ -17,43 +17,6 @@ from .storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
-try:
-    import tensorflow as tf
-    from tensorflow.keras.callbacks import Callback, EarlyStopping
-    from tensorflow.keras.layers import Dense, Dropout, Input, LSTM
-    from tensorflow.keras.losses import Huber
-    from tensorflow.keras.models import Model
-
-    TF_AVAILABLE = True
-
-    class _ProgressCallback(Callback):
-        def __init__(self, model_id: str, target: str) -> None:
-            super().__init__()
-            self._model_id = model_id
-            self._target = target
-
-        def on_epoch_end(self, epoch: int, logs: dict | None = None) -> None:
-            val_loss = float((logs or {}).get("val_loss", 0.0))
-            _update_registry(self._model_id, current_epoch=epoch + 1, val_loss=val_loss)
-
-except ImportError:
-    TF_AVAILABLE = False
-    logger.warning("TensorFlow no disponible — se usará RandomForest.")
-
-try:
-    import xgboost as xgb
-    XGB_AVAILABLE = True
-except Exception:
-    XGB_AVAILABLE = False
-    logger.warning("XGBoost no disponible — se usará HistGradientBoosting como fallback.")
-
-try:
-    import lightgbm as lgb
-    LGB_AVAILABLE = True
-except Exception:
-    LGB_AVAILABLE = False
-    logger.warning("LightGBM no disponible — se usará HistGradientBoosting como fallback.")
-
 _registry: dict[str, dict] = {}
 _lock = threading.Lock()
 
@@ -157,49 +120,18 @@ class TrainingService:
             if col in df.columns:
                 df[col], _ = _despike_isolated(df[col])
 
-        # Build per-target profiles from UVL treatment attributes
+        # Build per-target profiles from UVL treatment attributes (algorithm,
+        # window_size, feature_variant, hyperprofile). Every target trains with
+        # its own sklearn estimator via _train_per_target.
         treatment_target_profiles: dict[str, dict] = {
             t: FlamapyService.get_treatment_target_profile(treatment, t)
             for t in targets
         }
 
-        has_hyperprofiles = any(p.get("hyperprofile") for p in treatment_target_profiles.values())
-
-        if has_hyperprofiles:
-            self._train_per_target(
-                model_id, df, targets, input_features, treatment,
-                treatment_target_profiles, [], features or [], geo or {}, user_id,
-            )
-        else:
-            # Legacy path: merged single-algorithm, supports LSTM
-            profile = FlamapyService.get_treatment_profile(treatment)
-            target_profiles_list = [FlamapyService.get_target_profile(t) for t in targets]
-            target_profile = _merge_target_profiles(target_profiles_list)
-
-            window_size: int = int(target_profile.get("window_size", profile["window_size"]))
-            preferred: str = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
-            min_samples: int = profile["min_samples"]
-
-            all_cols = targets + input_features
-            n_joint = int(df[all_cols].dropna().shape[0])
-            algorithm = preferred
-            warnings: list[str] = []
-
-            if preferred == "LSTM":
-                if not TF_AVAILABLE:
-                    algorithm = "RandomForest"
-                    warnings.append("TensorFlow no disponible; se ha utilizado RandomForest.")
-                elif n_joint < min_samples or n_joint <= window_size * 2:
-                    algorithm = "RandomForest"
-                    warnings.append(
-                        f"Datos insuficientes para LSTM ({n_joint} filas; mínimo {max(min_samples, window_size * 2 + 1)}). "
-                        "Se ha utilizado RandomForest con características temporales."
-                    )
-
-            if algorithm == "LSTM":
-                self._train_lstm(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, features or [], geo or {}, user_id)
-            else:
-                self._train_sklearn(model_id, df, targets, input_features, window_size, treatment, all_cols, warnings, algorithm, features or [], geo or {}, user_id)
+        self._train_per_target(
+            model_id, df, targets, input_features, treatment,
+            treatment_target_profiles, [], features or [], geo or {}, user_id,
+        )
 
         self._create_db_record(model_id, user_id)
 
@@ -285,7 +217,7 @@ class TrainingService:
                 )
 
             # Apply features to full df_base before splitting so rolling windows
-            # (e.g. acc30d in irrigation_memory) have enough history for val rows.
+            # have enough history for val rows.
             # Shift(1) on all features guarantees no target leakage.
             if feature_variant and "date" in df_base.columns:
                 df_aug = add_features(df_base, lag_sources, window_size, feature_variant)
@@ -388,216 +320,6 @@ class TrainingService:
             n_val=n_vl,
         )
 
-    # ---------------------------------------------------------------- LSTM
-
-    def _train_lstm(
-        self,
-        model_id: str,
-        df: pd.DataFrame,
-        targets: list[str],
-        input_features: list[str],
-        window_size: int,
-        treatment: str,
-        all_cols: list[str],
-        warnings: list[str],
-        features: list[str],
-        geo: dict,
-        user_id: int | None,
-    ) -> None:
-        _update_registry(model_id, phase="preparando datos LSTM", algorithm="LSTM")
-
-        df_clean = df[all_cols].dropna().reset_index(drop=True)
-        n = len(df_clean)
-        split = int(n * 0.8)
-
-        train_df = df_clean.iloc[:split]
-        val_df   = df_clean.iloc[split:]
-
-        scaler_X = MinMaxScaler()
-        train_scaled = scaler_X.fit_transform(train_df[all_cols])
-        val_scaled   = scaler_X.transform(val_df[all_cols])
-
-        scaler_Y: dict[str, MinMaxScaler] = {}
-        for t in targets:
-            sc = MinMaxScaler()
-            sc.fit(train_df[[t]])
-            scaler_Y[t] = sc
-
-        def make_windows(arr: np.ndarray) -> np.ndarray:
-            return np.array(
-                [arr[i:i + window_size] for i in range(len(arr) - window_size)],
-                dtype="float32",
-            )
-
-        X_tr = make_windows(train_scaled)
-        X_vl = make_windows(val_scaled)
-
-        lstm_models: dict[str, Any] = {}
-        metrics: dict[str, dict] = {}
-        val_series_data: dict[str, dict] = {}
-        total_epochs = 200
-        _update_registry(model_id, total_epochs=total_epochs)
-        n_tr = len(X_tr)
-        n_vl = len(X_vl)
-
-        for t in targets:
-            _update_registry(model_id, phase="entrenando", current_target=t, current_epoch=0, val_loss=None)
-
-            y_tr = scaler_Y[t].transform(train_df[[t]].values[window_size:]).ravel().astype("float32")
-            y_vl = scaler_Y[t].transform(val_df[[t]].values[window_size:]).ravel().astype("float32")
-
-            inp = Input(shape=(window_size, len(all_cols)))
-            x = LSTM(128, activation="tanh")(inp)
-            x = Dropout(0.2)(x)
-            x = Dense(64, activation="relu")(x)
-            out = Dense(1)(x)
-            model = Model(inp, out)
-            model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss=Huber())
-
-            model.fit(
-                X_tr, y_tr,
-                validation_data=(X_vl, y_vl),
-                epochs=total_epochs,
-                batch_size=32,
-                callbacks=[
-                    _ProgressCallback(model_id, t),
-                    EarlyStopping(monitor="val_loss", patience=30, restore_best_weights=True, min_delta=1e-4),
-                ],
-                verbose=0,
-            )
-
-            lstm_models[t] = model
-            y_pred = scaler_Y[t].inverse_transform(model.predict(X_vl, verbose=0)).ravel()
-            y_true = scaler_Y[t].inverse_transform(y_vl.reshape(-1, 1)).ravel()
-            metrics[t] = _compute_metrics(y_true, y_pred)
-            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
-            _quality_warnings(t, metrics[t]["r2"], warnings)
-
-        scalers = {"X": scaler_X, **scaler_Y}
-        self._storage.save_lstm(model_id, lstm_models, scalers)
-
-        self._storage.save_metadata(model_id, {
-            "model_id": model_id,
-            "user_id": user_id,
-            "algorithm": "LSTM",
-            "treatment": treatment,
-            "features": features,
-            "geo": geo,
-            "all_cols": all_cols,
-            "targets": targets,
-            "input_features": input_features,
-            "window_size": window_size,
-            "temporal_features": False,
-            "n_samples": n_tr + n_vl,
-            "n_train": n_tr,
-            "n_val": n_vl,
-            "metrics": metrics,
-            "val_series": val_series_data,
-            "warnings": warnings,
-        })
-        _update_registry(model_id, status="completed", algorithm="LSTM", metrics=metrics, val_series=val_series_data, warnings=warnings, n_train=n_tr, n_val=n_vl)
-
-    # --------------------------------------------------------------- legacy RF / GB
-
-    def _train_sklearn(
-        self,
-        model_id: str,
-        df: pd.DataFrame,
-        targets: list[str],
-        input_features: list[str],
-        window_size: int,
-        treatment: str,
-        all_cols: list[str],
-        warnings: list[str],
-        algorithm: str,
-        features: list[str],
-        geo: dict,
-        user_id: int | None,
-    ) -> None:
-        _update_registry(model_id, phase="preparando datos", algorithm=algorithm)
-
-        sk_models: dict[str, Any] = {}
-        sk_scalers: dict[str, MinMaxScaler] = {}
-        metrics: dict[str, dict] = {}
-        val_series_data: dict[str, dict] = {}
-        feature_columns_by_target: dict[str, list[str]] = {}
-        n_trains: list[int] = []
-        n_vals: list[int] = []
-
-        for t in targets:
-            _update_registry(model_id, current_target=t, phase="entrenando")
-
-            lag_sources = targets + input_features
-            base_cols = lag_sources
-            df_base = df[(["date"] if "date" in df.columns else []) + base_cols].dropna(subset=base_cols).copy()
-            split = int(len(df_base) * 0.8)
-            train_base = df_base.iloc[:split].copy()
-            val_base = df_base.iloc[split:].copy()
-
-            if "date" in df_base.columns:
-                tr = _add_temporal_features(train_base, lag_sources, window_size)
-                vl = _add_temporal_features(val_base, lag_sources, window_size)
-                tr = tr.drop(columns=["date"], errors="ignore").dropna()
-                vl = vl.drop(columns=["date"], errors="ignore").dropna()
-            else:
-                tr = train_base.dropna()
-                vl = val_base.dropna()
-
-            if tr.empty or vl.empty:
-                raise ModelosServiceError(
-                    f"Datos insuficientes para {algorithm} tras aplicar ventana temporal {window_size}."
-                )
-
-            feat_cols = [c for c in tr.columns if c != t]
-            feature_columns_by_target[t] = feat_cols
-            n_trains.append(len(tr))
-            n_vals.append(len(vl))
-
-            scaler = MinMaxScaler()
-            tr_arr = scaler.fit_transform(tr[[t] + feat_cols])
-            vl_arr = scaler.transform(vl[[t] + feat_cols])
-
-            X_tr, y_tr = tr_arr[:, 1:], tr_arr[:, 0]
-            X_vl, y_vl = vl_arr[:, 1:], vl_arr[:, 0]
-
-            est = _build_rf() if algorithm == "RandomForest" else _build_gb()
-            est.fit(X_tr, y_tr)
-
-            y_pred = _desescalar_parcial(scaler, est.predict(X_vl).reshape(-1, 1), 0).ravel()
-            y_true = _desescalar_parcial(scaler, y_vl.reshape(-1, 1), 0).ravel()
-            metrics[t] = _compute_metrics(y_true, y_pred)
-            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
-            _quality_warnings(t, metrics[t]["r2"], warnings)
-
-            sk_models[t] = est
-            sk_scalers[t] = scaler
-
-        self._storage.save_sklearn(model_id, sk_models, sk_scalers)
-
-        n_tr = min(n_trains) if n_trains else 0
-        n_vl = min(n_vals) if n_vals else 0
-        self._storage.save_metadata(model_id, {
-            "model_id": model_id,
-            "user_id": user_id,
-            "algorithm": algorithm,
-            "treatment": treatment,
-            "features": features,
-            "geo": geo,
-            "all_cols": all_cols,
-            "targets": targets,
-            "input_features": input_features,
-            "window_size": window_size,
-            "temporal_features": True,
-            "feature_columns_by_target": feature_columns_by_target,
-            "n_samples": n_tr + n_vl,
-            "n_train": n_tr,
-            "n_val": n_vl,
-            "metrics": metrics,
-            "val_series": val_series_data,
-            "warnings": warnings,
-        })
-        _update_registry(model_id, status="completed", algorithm=algorithm, metrics=metrics, val_series=val_series_data, warnings=warnings, n_train=n_tr, n_val=n_vl)
-
     def _create_db_record(self, model_id: str, user_id: int | None) -> None:
         try:
             from apps.modelos.models import ModeloGuardado
@@ -667,24 +389,6 @@ def _build_estimator(
     if algorithm in ("GradientBoosting", "HistGB"):
         return _build_gb()
 
-    if algorithm == "XGBoost":
-        if not XGB_AVAILABLE:
-            msg = f"{target}: XGBoost no disponible; usando HistGradientBoosting."
-            logger.warning(msg)
-            if warnings_out is not None:
-                warnings_out.append(msg)
-            return _build_gb()
-        return xgb.XGBRegressor(**params, random_state=42, verbosity=0)
-
-    if algorithm == "LightGBM":
-        if not LGB_AVAILABLE:
-            msg = f"{target}: LightGBM no disponible; usando HistGradientBoosting."
-            logger.warning(msg)
-            if warnings_out is not None:
-                warnings_out.append(msg)
-            return _build_gb()
-        return lgb.LGBMRegressor(**params, random_state=42)
-
     if algorithm == "SVR":
         from sklearn.svm import SVR
         return SVR(**params)
@@ -714,20 +418,6 @@ def _build_estimator(
         return ElasticNet(**params)
 
     raise ModelosServiceError(f"Algoritmo no soportado: {algorithm!r}")
-
-
-def _merge_target_profiles(target_profiles: list[dict]) -> dict:
-    algorithm_priority = {"GradientBoosting": 1, "RandomForest": 2, "LSTM": 3}
-    merged: dict = {}
-    for profile in target_profiles:
-        if "window_size" in profile:
-            merged["window_size"] = max(int(merged.get("window_size", 0)), int(profile["window_size"]))
-        if "preferred_algorithm" in profile:
-            current = merged.get("preferred_algorithm")
-            candidate = profile["preferred_algorithm"]
-            if current is None or algorithm_priority.get(candidate, 0) > algorithm_priority.get(current, 0):
-                merged["preferred_algorithm"] = candidate
-    return merged
 
 
 DESPIKE_K = 5.0

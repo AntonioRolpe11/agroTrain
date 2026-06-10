@@ -17,7 +17,6 @@ from apps.modelos.services.training_service import (
     _desescalar_parcial,
     _despike_isolated,
     _interpolate_sensor_gaps,
-    _merge_target_profiles,
     get_training_status,
 )
 from sklearn.preprocessing import MinMaxScaler
@@ -125,28 +124,9 @@ class TestBuildEstimator:
             _build_estimator("UnknownAlgo", {})
 
 
-class TestMergeTargetProfiles:
-    def test_picks_largest_window(self):
-        merged = _merge_target_profiles(
-            [{"window_size": 3}, {"window_size": 7}, {"window_size": 5}]
-        )
-        assert merged["window_size"] == 7
-
-    def test_prefers_higher_priority_algorithm(self):
-        merged = _merge_target_profiles(
-            [{"preferred_algorithm": "GradientBoosting"}, {"preferred_algorithm": "LSTM"}]
-        )
-        assert merged["preferred_algorithm"] == "LSTM"
-
-    def test_returns_empty_when_no_profiles(self):
-        assert _merge_target_profiles([]) == {}
-
-
 @pytest.mark.django_db
 class TestTrainingPipeline:
-    def test_run_pipeline_with_random_forest(self, tmp_path, settings, admin_user, monkeypatch):
-        # Disable TF so LSTM path falls back to RF
-        monkeypatch.setattr("apps.modelos.services.training_service.TF_AVAILABLE", False)
+    def test_run_pipeline_with_random_forest(self, tmp_path, settings, admin_user):
         settings.MODELS_STORAGE_PATH = tmp_path
 
         svc = TrainingService()
@@ -172,8 +152,7 @@ class TestTrainingPipeline:
         assert (tmp_path / "m1" / "model_MCD.pkl").exists()
         assert (tmp_path / "m1" / "scaler_MCD.pkl").exists()
 
-    def test_missing_target_columns_raises(self, tmp_path, settings, monkeypatch):
-        monkeypatch.setattr("apps.modelos.services.training_service.TF_AVAILABLE", False)
+    def test_missing_target_columns_raises(self, tmp_path, settings):
         settings.MODELS_STORAGE_PATH = tmp_path
         svc = TrainingService()
         with pytest.raises(ModelosServiceError, match="Columnas ausentes"):

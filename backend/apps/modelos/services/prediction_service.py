@@ -52,13 +52,11 @@ class PredictionService:
 
         predicted_for_date = (df["date"].max() + pd.Timedelta(days=1)).date()
 
-        # Route: per-target profiles (new path) vs legacy single-algorithm path
+        # Route: per-target profiles (new path) vs legacy single-algorithm sklearn path
         if metadata.get("target_profiles"):
             predictions = self._predict_per_target(
                 model_id, df, metadata, targets, input_features, predicted_for_date
             )
-        elif algorithm == "LSTM":
-            predictions = self._predict_lstm(model_id, df, targets, all_cols, window_size)
         else:
             predictions = self._predict_sklearn(
                 model_id, df, metadata, targets, input_features, window_size, algorithm, predicted_for_date
@@ -154,33 +152,6 @@ class PredictionService:
             pred = _desescalar_parcial(scaler, pred_scaled.reshape(-1, 1), 0).ravel()[0]
             predictions[target] = float(pred)
 
-        return predictions
-
-    # ---------------------------------------------------------------- legacy LSTM
-
-    def _predict_lstm(
-        self,
-        model_id: str,
-        df: pd.DataFrame,
-        targets: list[str],
-        all_cols: list[str],
-        window_size: int,
-    ) -> dict[str, float]:
-        df_clean = df[all_cols].dropna().reset_index(drop=True)
-        if len(df_clean) < window_size:
-            raise PredictionServiceError(
-                f"Datos insuficientes para predecir: se necesitan al menos {window_size} filas completas."
-            )
-
-        lstm_models, scaler_X, scaler_Y = self._storage.load_lstm(model_id, targets)
-        window = df_clean[all_cols].tail(window_size)
-        X = scaler_X.transform(window[all_cols]).astype("float32").reshape(1, window_size, len(all_cols))
-
-        predictions: dict[str, float] = {}
-        for target in targets:
-            y_scaled = lstm_models[target].predict(X, verbose=0)
-            value = scaler_Y[target].inverse_transform(y_scaled).ravel()[0]
-            predictions[target] = float(value)
         return predictions
 
     # ---------------------------------------------------------------- legacy sklearn

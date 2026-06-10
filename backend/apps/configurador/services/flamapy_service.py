@@ -326,31 +326,6 @@ class FlamapyService:
             return profile
 
     @classmethod
-    def get_target_profile(cls, target_name: str) -> dict:
-        """
-        Per-target overrides derived from UVL attributes on the VariableObjetivo node.
-
-        Read by training_service to override the treatment profile when the target
-        declares a `preferred_algorithm` and/or `window_size_override`. The empirical
-        rationale for these per-target overrides is documented in
-        `docs/experimentacion_modelos.md` (sección "Reasignación del atributo
-        preferred_algorithm" y "Window size variable por target").
-        """
-        with cls._state_lock:
-            if cls._base_fm_model is None:
-                raise RuntimeError("Modelo no inicializado. Llama a warm_up primero.")
-            node = cls._find_feature(cls._base_fm_model.root, target_name)
-            if node is None:
-                return {}
-            attrs = {attr.name: attr.default_value for attr in node.get_attributes() if attr.default_value}
-            profile: dict = {}
-            if "preferred_algorithm" in attrs:
-                profile["preferred_algorithm"] = attrs["preferred_algorithm"]
-            if "window_size_override" in attrs:
-                profile["window_size"] = int(attrs["window_size_override"])
-            return profile
-
-    @classmethod
     def get_treatment_target_profile(cls, treatment_name: str, target_name: str) -> dict:
         """
         Returns algorithm, window_size, feature_variant, hyperprofile for a

@@ -89,16 +89,6 @@ class TestProfiles:
         assert profile["window_size"] == 5
         assert profile["preferred_algorithm"] == "RandomForest"
 
-    def test_get_target_profile_with_override(self):
-        FlamapyService.warm_up(FIXTURE_PATH)
-        profile = FlamapyService.get_target_profile("TasaBuenos")
-        assert profile["preferred_algorithm"] == "RandomForest"
-        assert profile["window_size"] == 7
-
-    def test_get_target_profile_empty_when_no_attrs(self):
-        FlamapyService.warm_up(FIXTURE_PATH)
-        assert FlamapyService.get_target_profile("MCD") == {}
-
     def test_get_quality_thresholds(self):
         FlamapyService.warm_up(FIXTURE_PATH)
         th = FlamapyService.get_quality_thresholds("MCD")
@@ -227,14 +217,14 @@ class TestTreatmentTargetProfile:
 features
 \tRoot
 \t\tmandatory
-\t\t\tT { window_size 4, preferred_algorithm 'RandomForest', min_samples 10, pref_alg_X 'XGBoost', window_X 9, feat_variant_X 'ema', hyperprofile_X 'hp_x_v1' }
+\t\t\tT { window_size 4, preferred_algorithm 'RandomForest', min_samples 10, pref_alg_X 'GradientBoosting', window_X 9, feat_variant_X 'ema', hyperprofile_X 'hp_x_v1' }
 \t\t\tX { csv_col 'x' }
 """
         path = tmp_path / "t.uvl"
         path.write_text(uvl, encoding="utf-8")
         FlamapyService.warm_up(path)
         profile = FlamapyService.get_treatment_target_profile("T", "X")
-        assert profile["algorithm"] == "XGBoost"
+        assert profile["algorithm"] == "GradientBoosting"
         assert profile["window_size"] == 9
         assert profile["feature_variant"] == "ema"
         assert profile["hyperprofile"] == "hp_x_v1"
