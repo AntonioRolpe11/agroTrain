@@ -88,6 +88,11 @@ SENSOR_MAP: dict[str, tuple[str, str]] = {
 SUFFIX_REPLACEMENTS: dict[str, str] = {
     "Tª": "Ta",
     "Dendrómetro": "Dendrometro",
+    # Variantes ortográficas del pluviómetro en los CSV crudos (RDC 49, Secano 53):
+    # sin la 'i' ("Pluvómetro") o con 'L' mayúscula ("PLuviómetro"). Sin esta
+    # normalización, el fichero no casa con SENSOR_MAP y la lluvia se descarta en silencio.
+    "Pluvómetro": "Pluviómetro",
+    "PLuviómetro": "Pluviómetro",
 }
 
 
