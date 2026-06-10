@@ -7,9 +7,9 @@ features
 				mandatory
 					Tratamiento { label 'Tratamiento de riego' }
 						alternative
-							RiegoControl { label 'Riego control', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'XGBoost', window_MCD 3, feat_variant_MCD 'irrigation_memory', hyperprofile_MCD 'control_mcd_xgb_v1', pref_alg_TasaBuenos 'SVR', window_TasaBuenos 28, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'control_tasabuenos_svr_v1', pref_alg_TasaSeveros 'LightGBM', window_TasaSeveros 3, feat_variant_TasaSeveros 'soil_profile', hyperprofile_TasaSeveros 'control_tasaseveros_lgbm_v1' }
-							RiegoDeficitario { label 'Riego deficitario', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'irrigation_memory', hyperprofile_MCD 'rdc_mcd_pls_v1', pref_alg_TasaBuenos 'PLSRegression', window_TasaBuenos 10, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'rdc_tasabuenos_pls_v1', pref_alg_TasaSeveros 'SVR', window_TasaSeveros 21, feat_variant_TasaSeveros 'target_only', hyperprofile_TasaSeveros 'rdc_tasaseveros_svr_v1' }
-							RiegoDeficitarioSevero { label 'Riego deficitario severo', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices', hyperprofile_MCD 'secano_mcd_pls_v1', pref_alg_TasaBuenos 'ElasticNet', window_TasaBuenos 2, feat_variant_TasaBuenos 'target_only', hyperprofile_TasaBuenos 'secano_tasabuenos_elasticnet_v1', pref_alg_TasaSeveros 'SVR', window_TasaSeveros 7, feat_variant_TasaSeveros 'ema', hyperprofile_TasaSeveros 'secano_tasaseveros_svr_v1' }
+							RiegoControl { label 'Riego control', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices', hyperprofile_MCD 'secano_mcd_pls_v1', pref_alg_TasaBuenos 'ElasticNet', window_TasaBuenos 7, feat_variant_TasaBuenos 'full', hyperprofile_TasaBuenos 'control_tasabuenos_elasticnet_v3', pref_alg_TasaSeveros 'GradientBoosting', window_TasaSeveros 7, feat_variant_TasaSeveros 'basic', hyperprofile_TasaSeveros 'control_tasaseveros_gb_v3' }
+							RiegoDeficitario { label 'Riego deficitario', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices', hyperprofile_MCD 'secano_mcd_pls_v1', pref_alg_TasaBuenos 'RandomForest', window_TasaBuenos 3, feat_variant_TasaBuenos 'full', hyperprofile_TasaBuenos 'rdc_tasabuenos_rf_v3', pref_alg_TasaSeveros 'GradientBoosting', window_TasaSeveros 14, feat_variant_TasaSeveros 'full', hyperprofile_TasaSeveros 'rdc_tasaseveros_gb_v3' }
+							RiegoDeficitarioSevero { label 'Riego deficitario severo', window_size 7, min_samples 730, min_reject 60, min_warn 120, min_good 700, pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices', hyperprofile_MCD 'secano_mcd_pls_v1', pref_alg_TasaBuenos 'SVR', window_TasaBuenos 14, feat_variant_TasaBuenos 'stress_indices', hyperprofile_TasaBuenos 'secano_tasabuenos_svr_v3', pref_alg_TasaSeveros 'GradientBoosting', window_TasaSeveros 3, feat_variant_TasaSeveros 'full', hyperprofile_TasaSeveros 'secano_tasaseveros_gb_v3' }
 					TipoSuelo { label 'Tipo de suelo' }
 						alternative
 							Calcisoles { label 'Suelos calizos (calcisoles)' }
@@ -37,8 +37,9 @@ features
 							Hd65 { label '65 cm', csv_col 'humedad_Hd65' }
 							Hd75 { label '75 cm', csv_col 'humedad_Hd75' }
 					TemperaturaAire { label 'Temperatura del aire', csv_cols 'tmax,tmin' }
-					Pluviometro { label 'Pluviómetro', csv_col 'pluv' }
 					DPV { label 'Déficit de presión de vapor', csv_col 'dpv' }
+					Riego { label 'Riego', csv_col 'riego', fill_strategy 'zero' }
+					Pluviometro { label 'Pluviómetro', csv_col 'lluvia', fill_strategy 'zero' }
 		mandatory
 			DatosTelemetria { label 'Datos de telemetría', wizard_step 'telemetry' }
 				optional
@@ -51,9 +52,9 @@ features
 		mandatory
 			VariableObjetivo { label 'Variable objetivo', wizard_step 'objective' }
 				alternative
-					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80, preferred_algorithm 'RandomForest' }
-					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70, preferred_algorithm 'RandomForest', window_size_override 3 }
-					MCD { label 'Contracción del tronco', quality_min 0.35, quality_good 0.50, preferred_algorithm 'LSTM', window_size_override 3 }
+					TasaBuenos { label 'Tasa de buenos', quality_min 0.60, quality_good 0.80, recommended_sensors 'Dendrometro,Pluviometro,Riego' }
+					TasaSeveros { label 'Tasa de severos', quality_min 0.50, quality_good 0.70, recommended_sensors 'Dendrometro,Pluviometro,Riego' }
+					MCD { label 'MCD', quality_min 0.35, quality_good 0.50 }
 constraints
 	Hd05 => HumedadSuelo
 	Hd15 => HumedadSuelo
@@ -68,6 +69,7 @@ constraints
 	TasaBuenos => DatoTB
 	TasaSeveros => DatoTS
 	MCD => DatoMCD
+	MCD => (TemperaturaAire & DPV)
 	NDWI => (NDVI | EVI | SAVI)
 	Calcisoles => (SAVI & NDWI)
 	Luvisoles => (NDVI | EVI)
@@ -75,8 +77,9 @@ constraints
 	Cambisoles => (NDVI | EVI)
 	LeptosolesRegosoles => (EVI & SAVI)
 	RiegoControl => Hd35 | Hd45 | Hd55
-	RiegoControl => Pluviometro
 	RiegoDeficitario => Hd35 | Hd45 | Hd55
 	RiegoDeficitario => DPV
 	RiegoDeficitarioSevero => Hd35 | Hd45 | Hd55
 	RiegoDeficitarioSevero => DPV
+	RiegoControl => TemperaturaAire
+	RiegoDeficitarioSevero => TemperaturaAire
