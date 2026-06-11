@@ -4,10 +4,10 @@
  * Posts a synthetic fused CSV to `POST /api/v1/modelos/train` and polls
  * `GET /api/v1/modelos/<id>/status` until the async pipeline reaches a
  * terminal state. Uses the `TasaBuenos` objective under the `RiegoControl`
- * treatment: that maps (via the UVL fixture) to the `control_tasabuenos_svr_v1`
- * hyperprofile whose `feature_variant` is `target_only` and `required_inputs`
- * is empty, so the CSV only needs `date` + `TasaBuenos` columns and the
- * pipeline can complete without telemetry/sensor inputs.
+ * treatment: that maps (via the UVL fixture) to the
+ * `control_tasabuenos_elasticnet_v3` hyperprofile (`feature_variant 'full'`)
+ * whose `required_inputs` is empty, so the CSV only needs `date` + `TasaBuenos`
+ * columns and the pipeline completes without telemetry/sensor inputs.
  */
 const BACKEND = Cypress.env("backendUrl") as string;
 

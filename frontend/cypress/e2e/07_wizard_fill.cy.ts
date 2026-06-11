@@ -41,11 +41,9 @@ describe("Wizard fill — parcel + UVL feature selection", () => {
     cy.contains("button", /^Riego control$/).click();
     cy.contains("button", "Suelos calizos").click();
 
-    // Place the parcel point on the map (enables the parcel step)
-    cy.get(".leaflet-container", { timeout: 10000 }).click("center");
-    cy.contains("Punto colocado", { timeout: 10000 }).should("exist");
-
-    // Parcel step is now ready — advance
+    // Parcel step is ready once treatment + soil + province + municipio are set
+    // (parcelStepReady in DigitalSensorCreation.tsx — no map point required here;
+    // the parcel point/geometry now lives in the telemetry step) — advance
     cy.contains("button", "Listo, continuar a sensores físicos")
       .should("not.be.disabled")
       .click();

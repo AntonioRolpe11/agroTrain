@@ -25,6 +25,9 @@ Cypress.Commands.add("resetBackend", (opts = {}) => {
 Cypress.Commands.add("loginAs", (role: "admin" | "tecnico") => {
   const email = role === "admin" ? Cypress.env("adminEmail") : Cypress.env("tecnicoEmail");
   const password = role === "admin" ? Cypress.env("adminPassword") : Cypress.env("tecnicoPassword");
+  // Visit the app first so the token is written to the app origin
+  // (localhost:8080), independent of any prior cy.visit in the spec.
+  cy.visit("/login");
   cy.request("POST", `${Cypress.env("backendUrl")}/api/v1/auth/login`, {
     email,
     password,

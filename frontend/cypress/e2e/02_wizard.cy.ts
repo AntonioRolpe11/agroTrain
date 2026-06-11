@@ -1,17 +1,20 @@
-describe("Wizard step-by-step", () => {
+describe("Wizard smoke", () => {
   beforeEach(() => {
     cy.resetBackend();
-    cy.loginAs("tecnico");
-    cy.visit("/");
+    cy.loginAs("tecnico"); // visits /login + persists the JWT on the app origin
   });
 
-  it("loads the configurator UI after login", () => {
-    // Smoke test: the wizard or landing page should render successfully
+  it("lands on an authenticated page (not /login) after login", () => {
+    cy.visit("/");
     cy.location("pathname", { timeout: 10000 }).should("not.equal", "/login");
   });
 
-  it("allows opening the configurator route", () => {
+  it("opens the configurator route and renders the wizard", () => {
     cy.visit("/creacion-sensor-digital");
-    cy.contains(/configurador|wizard|parcela|sensor/i, { timeout: 10000 }).should("exist");
+    cy.contains("h1", "Creación de sensor digital", { timeout: 10000 }).should(
+      "be.visible",
+    );
+    // Parcel step (ParcelDataCard) is the first wizard block
+    cy.get("#parcela-nombre", { timeout: 10000 }).should("exist");
   });
 });
