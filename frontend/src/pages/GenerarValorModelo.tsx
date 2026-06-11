@@ -234,10 +234,17 @@ export default function GenerarValorModelo() {
       toast.error("Carga primero sensores", { description: "Se necesita el rango temporal de los sensores para extraer telemetría." });
       return;
     }
+    // Colchón hacia atrás: en ventanas cortas el rango del sensor puede no contener
+    // ninguna pasada limpia de Sentinel-2 (revisita ~5 días + filtro de nubes).
+    // Ampliamos solo el inicio; la fusión propaga (clamp forward) el último índice
+    // observado hacia los días del sensor, sin añadir filas extra al CSV final.
+    const TELEMETRY_LOOKBACK_DAYS = 15;
+    const bufferedStart = new Date(range[0]);
+    bufferedStart.setDate(bufferedStart.getDate() - TELEMETRY_LOOKBACK_DAYS);
     await extractTelemetryMutation.mutateAsync({
       features: [...new Set([...features, ...selectedTelemetry])],
       punto,
-      startDate: range[0],
+      startDate: bufferedStart.toISOString().slice(0, 10),
       endDate: range[1],
       cloudThreshold,
     });
@@ -393,7 +400,7 @@ export default function GenerarValorModelo() {
               Extraer telemetría
             </Button>
             {selectedTelemetry.length === 0 && <StatusTag tone="neutral">El modelo no usa telemetría</StatusTag>}
-            {extractedTelemetry && <StatusTag tone="success">{extractedTelemetry.points.length} fechas extraídas</StatusTag>}
+            {extractedTelemetry && <StatusTag tone="success">{`${extractedTelemetry.points.length} fechas extraídas`}</StatusTag>}
           </div>
           {extractedTelemetryErrors.length > 0 && (
             <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
