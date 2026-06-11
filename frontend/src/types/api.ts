@@ -120,12 +120,10 @@ export interface TrainingStatus {
   status: "training" | "completed" | "error";
   phase?: string | null;
   algorithm?: string | null;
-  current_epoch?: number | null;
-  total_epochs?: number | null;
   current_target?: string | null;
-  val_loss?: number | null;
   n_train?: number | null;
   n_val?: number | null;
+  is_validation?: boolean;
   metrics?: Record<string, TargetMetrics>;
   val_series?: Record<string, ValSeries>;
   warnings?: string[];
@@ -229,6 +227,7 @@ export interface ModelMetadata {
   n_samples: number;
   n_train: number;
   n_val: number;
+  is_validation?: boolean;
   metrics: Record<string, TargetMetrics>;
   warnings: string[];
   imported?: boolean;

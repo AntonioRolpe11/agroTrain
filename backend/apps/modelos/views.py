@@ -71,6 +71,8 @@ def _metadata_from_db(record: ModeloGuardado) -> dict:
         "n_samples": record.n_samples,
         "n_train": record.n_train,
         "n_val": record.n_val,
+        # Operativo (100% datos) no guarda métricas → se deduce el tipo de ahí (sin columna DB).
+        "is_validation": bool(record.metrics),
         "metrics": record.metrics,
         "warnings": record.warnings,
         "imported": record.imported,
@@ -154,9 +156,13 @@ def train_model(request):
 
     csv_content = csv_file.read()
 
+    # Tipo de sensor: validación (split 80/20 + métricas) vs operativo (100% datos, sin métricas).
+    is_validation = request.data.get("is_validation", "true") != "false"
+
     try:
         model_id = _training_service.start_training(
-            targets, input_cols, treatment, csv_content, features=features, geo=geo, user_id=request.user.pk
+            targets, input_cols, treatment, csv_content,
+            features=features, geo=geo, user_id=request.user.pk, is_validation=is_validation,
         )
     except ModelosServiceError as exc:
         return Response({"detail": str(exc)}, status=400)

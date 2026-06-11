@@ -152,6 +152,35 @@ class TestTrainingPipeline:
         assert (tmp_path / "m1" / "model_MCD.pkl").exists()
         assert (tmp_path / "m1" / "scaler_MCD.pkl").exists()
 
+    def test_operational_sensor_trains_on_all_data_without_metrics(self, tmp_path, settings, admin_user):
+        # Sensor digital operativo (is_validation=False): 100% de los datos, sin métricas/validación.
+        settings.MODELS_STORAGE_PATH = tmp_path
+
+        svc = TrainingService()
+        csv = _build_csv(n_rows=80)
+        svc._run_pipeline(
+            model_id="op1",
+            targets=["MCD"],
+            input_cols=["tmax"],
+            treatment="Secano",
+            csv_content=csv,
+            features=["Secano", "DatoMCD", "TemperaturaAire", "MCD"],
+            geo={"punto": {"lat": 37.1, "lng": -5.9}},
+            user_id=admin_user.pk,
+            is_validation=False,
+        )
+
+        storage = StorageService()
+        metadata = storage.load_metadata("op1")
+        assert metadata["is_validation"] is False
+        assert metadata["metrics"] == {}
+        assert metadata["val_series"] == {}
+        assert metadata["n_val"] == 0
+        assert metadata["n_train"] > 0
+        # El modelo se entrena igualmente y queda listo para inferencia.
+        assert (tmp_path / "op1" / "model_MCD.pkl").exists()
+        assert (tmp_path / "op1" / "scaler_MCD.pkl").exists()
+
     def test_missing_target_columns_raises(self, tmp_path, settings):
         settings.MODELS_STORAGE_PATH = tmp_path
         svc = TrainingService()

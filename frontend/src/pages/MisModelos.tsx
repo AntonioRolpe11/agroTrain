@@ -40,6 +40,14 @@ function MetricsSummary({ metrics }: { metrics?: ModelMetadata["metrics"] }) {
   );
 }
 
+function TypeBadge({ isValidation }: { isValidation?: boolean }) {
+  return isValidation === false ? (
+    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">digital</span>
+  ) : (
+    <span className="text-xs bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded">validación</span>
+  );
+}
+
 function hasModelGeo(model: ModelMetadata): boolean {
   return Boolean(model.geo?.punto);
 }
@@ -156,10 +164,15 @@ export default function MisModelos() {
                         importado
                       </span>
                     )}
+                    <span className="ml-1"><TypeBadge isValidation={m.is_validation} /></span>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{m.targets.join(", ")}</td>
                   <td className="px-4 py-3">
-                    <MetricsSummary metrics={m.metrics} />
+                    {m.is_validation === false ? (
+                      <span className="text-xs text-muted-foreground">Sin validación · 100% datos</span>
+                    ) : (
+                      <MetricsSummary metrics={m.metrics} />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{m.n_samples}</td>
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmt(m.created_at)}</td>

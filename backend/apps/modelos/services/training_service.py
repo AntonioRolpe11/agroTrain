@@ -49,21 +49,20 @@ class TrainingService:
         features: list[str] | None = None,
         geo: dict | None = None,
         user_id: int | None = None,
+        is_validation: bool = True,
     ) -> str:
         model_id = str(uuid.uuid4())
         with _lock:
             _registry[model_id] = {
                 "status": "training",
                 "phase": "iniciando",
-                "current_epoch": None,
-                "total_epochs": None,
                 "current_target": None,
-                "val_loss": None,
                 "user_id": user_id,
+                "is_validation": is_validation,
             }
         threading.Thread(
             target=self._train,
-            args=(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id),
+            args=(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id, is_validation),
             daemon=True,
         ).start()
         return model_id
@@ -78,9 +77,10 @@ class TrainingService:
         features: list[str],
         geo: dict,
         user_id: int | None,
+        is_validation: bool = True,
     ) -> None:
         try:
-            self._run_pipeline(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id)
+            self._run_pipeline(model_id, targets, input_cols, treatment, csv_content, features or [], geo or {}, user_id, is_validation)
         except Exception as exc:
             logger.exception("Error entrenando modelo %s", model_id)
             _update_registry(model_id, status="error", detail=str(exc))
@@ -95,6 +95,7 @@ class TrainingService:
         features: list[str] | None = None,
         geo: dict | None = None,
         user_id: int | None = None,
+        is_validation: bool = True,
     ) -> None:
         from apps.configurador.services.flamapy_service import FlamapyService
 
@@ -130,7 +131,7 @@ class TrainingService:
 
         self._train_per_target(
             model_id, df, targets, input_features, treatment,
-            treatment_target_profiles, [], features or [], geo or {}, user_id,
+            treatment_target_profiles, [], features or [], geo or {}, user_id, is_validation,
         )
 
         self._create_db_record(model_id, user_id)
@@ -149,6 +150,7 @@ class TrainingService:
         features: list[str],
         geo: dict,
         user_id: int | None,
+        is_validation: bool = True,
     ) -> None:
         from apps.modelos.services.hyperprofile_registry import UnknownHyperprofileError, get_hyperprofile
         from apps.modelos.services.feature_engineering import add_features
@@ -233,14 +235,24 @@ class TrainingService:
                     f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
                 )
 
-            split = int(len(df_aug) * 0.8)
-            tr = df_aug.iloc[:split].copy()
-            vl = df_aug.iloc[split:].copy()
-
-            if tr.empty or vl.empty:
-                raise ModelosServiceError(
-                    f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
-                )
+            # Validación: split temporal 80/20 para medir precisión (métricas + serie val).
+            # Operativo: se entrena con el 100% de los datos (sin hold-out); el objetivo es el
+            # predictor, no medir precisión, así que no hay métricas de validación.
+            if is_validation:
+                split = int(len(df_aug) * 0.8)
+                tr = df_aug.iloc[:split].copy()
+                vl = df_aug.iloc[split:].copy()
+                if tr.empty or vl.empty:
+                    raise ModelosServiceError(
+                        f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
+                    )
+            else:
+                tr = df_aug.copy()
+                vl = df_aug.iloc[0:0].copy()
+                if tr.empty:
+                    raise ModelosServiceError(
+                        f"Datos insuficientes para '{t}' tras aplicar ventana temporal {window_size}."
+                    )
 
             if max_samples and len(tr) > max_samples:
                 tr = tr.sample(max_samples, random_state=42)
@@ -252,24 +264,24 @@ class TrainingService:
 
             scaler = MinMaxScaler()
             tr_arr = scaler.fit_transform(tr[[t] + feat_cols])
-            vl_arr = scaler.transform(vl[[t] + feat_cols])
 
             X_tr, y_tr = tr_arr[:, 1:], tr_arr[:, 0]
-            X_vl, y_vl = vl_arr[:, 1:], vl_arr[:, 0]
 
             est = _build_estimator(algorithm, hp_params, n_features=X_tr.shape[1], n_samples=X_tr.shape[0], warnings_out=warnings, target=t)
 
             est.fit(X_tr, y_tr)
 
-            y_pred_scaled = est.predict(X_vl)
-            if hasattr(y_pred_scaled, "ndim") and y_pred_scaled.ndim > 1:
-                y_pred_scaled = y_pred_scaled.ravel()
-
-            y_pred = _desescalar_parcial(scaler, y_pred_scaled.reshape(-1, 1), 0).ravel()
-            y_true = _desescalar_parcial(scaler, y_vl.reshape(-1, 1), 0).ravel()
-            metrics[t] = _compute_metrics(y_true, y_pred)
-            val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
-            _quality_warnings(t, metrics[t]["r2"], warnings)
+            if is_validation:
+                vl_arr = scaler.transform(vl[[t] + feat_cols])
+                X_vl, y_vl = vl_arr[:, 1:], vl_arr[:, 0]
+                y_pred_scaled = est.predict(X_vl)
+                if hasattr(y_pred_scaled, "ndim") and y_pred_scaled.ndim > 1:
+                    y_pred_scaled = y_pred_scaled.ravel()
+                y_pred = _desescalar_parcial(scaler, y_pred_scaled.reshape(-1, 1), 0).ravel()
+                y_true = _desescalar_parcial(scaler, y_vl.reshape(-1, 1), 0).ravel()
+                metrics[t] = _compute_metrics(y_true, y_pred)
+                val_series_data[t] = {"y_true": y_true[:100].tolist(), "y_pred": y_pred[:100].tolist()}
+                _quality_warnings(t, metrics[t]["r2"], warnings)
 
             sk_models[t] = est
             sk_scalers[t] = scaler
@@ -305,6 +317,7 @@ class TrainingService:
             "n_samples": n_tr + n_vl,
             "n_train": n_tr,
             "n_val": n_vl,
+            "is_validation": is_validation,
             "metrics": metrics,
             "val_series": val_series_data,
             "warnings": warnings,
@@ -318,6 +331,7 @@ class TrainingService:
             warnings=warnings,
             n_train=n_tr,
             n_val=n_vl,
+            is_validation=is_validation,
         )
 
     def _create_db_record(self, model_id: str, user_id: int | None) -> None:

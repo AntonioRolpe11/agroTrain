@@ -9,10 +9,11 @@ import type {
 import { authFetch, authFetchJson, getApiBase } from "./api";
 
 export const modelosApi = {
-  async train(features: string[], csvBlob: Blob, geo?: unknown): Promise<TrainStartResponse> {
+  async train(features: string[], csvBlob: Blob, geo?: unknown, isValidation = true): Promise<TrainStartResponse> {
     const form = new FormData();
     form.append("features", JSON.stringify(features));
     if (geo !== undefined) form.append("geo", JSON.stringify(geo));
+    form.append("is_validation", String(isValidation));
     form.append("csv_file", csvBlob, "datos_fusionados.csv");
 
     const response = await authFetch("/api/v1/modelos/train", {

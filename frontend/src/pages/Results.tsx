@@ -119,6 +119,7 @@ export default function Results() {
   const { geo } = useGeo();
   const extractTelemetryMutation = useExtractTelemetryMutation();
   const trainMutation = useTrainModelMutation();
+  const [sensorType, setSensorType] = useState<"validacion" | "digital">("validacion");
 
   const features = trees[0]?.features ?? [];
   const model = featureModelQuery.data ?? null;
@@ -472,7 +473,7 @@ export default function Results() {
     const csvContent = fusionResultToCsv(fusionResult, ";");
     const csvBlob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     try {
-      const result = await trainMutation.mutateAsync({ features, csvBlob, geo });
+      const result = await trainMutation.mutateAsync({ features, csvBlob, geo, isValidation: sensorType === "validacion" });
       setActiveModelId(result.model_id);
       toast.success("Entrenamiento iniciado", { description: `Modelo ${result.model_id.slice(0, 8)}… en proceso.` });
     } catch (err) {
@@ -500,7 +501,7 @@ export default function Results() {
     <div className="section-container max-w-7xl py-10">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">Validación del modelo y datos de entrenamiento</h1>
+          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">{sensorType === "digital" ? "Generación del sensor digital y datos de entrenamiento" : "Validación del modelo y datos de entrenamiento"}</h1>
           <p className="animate-reveal-up text-muted-foreground" style={{ animationDelay: "60ms" }}>
             Revisa la configuración seleccionada, añade tus CSV de sensores y telemetría, y deja preparado el paso previo a generar el sensor digital.
           </p>
@@ -885,15 +886,52 @@ export default function Results() {
             </div>
           </div>
           {!activeModelId && !trainMutation.isPending && (
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-muted-foreground">
-                {!fusionResult ? "Primero fusiona los datos de sensores y telemetría en la sección 3."
-                  : fusedDataLevel === "reject" ? "Los datos fusionados no alcanzan el mínimo necesario para entrenar."
-                  : "El CSV fusionado está listo. Pulsa el botón para iniciar el entrenamiento."}
-              </p>
-              <Button onClick={() => void handleGenerateSensor()} disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
-                <Sparkles className="mr-2 h-4 w-4" />Generar sensor
-              </Button>
+            <div className="flex flex-col gap-5">
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="mb-3 text-sm font-medium">Tipo de sensor digital</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="sensorType"
+                      className="mt-1"
+                      checked={sensorType === "validacion"}
+                      onChange={() => setSensorType("validacion")}
+                    />
+                    <span>
+                      <span className="font-medium">Sensor digital de validación</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Hay sensor físico con el que comparar y quieres medir la precisión → split 80/20 + métricas (MAE/RMSE/R²).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="sensorType"
+                      className="mt-1"
+                      checked={sensorType === "digital"}
+                      onChange={() => setSensorType("digital")}
+                    />
+                    <span>
+                      <span className="font-medium">Sensor digital</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Sólo quieres el predictor → entrena con el 100% de los datos. No genera métricas de validación.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {!fusionResult ? "Primero fusiona los datos de sensores y telemetría en la sección 3."
+                    : fusedDataLevel === "reject" ? "Los datos fusionados no alcanzan el mínimo necesario para entrenar."
+                    : "El CSV fusionado está listo. Pulsa el botón para iniciar el entrenamiento."}
+                </p>
+                <Button onClick={() => void handleGenerateSensor()} disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
+                  <Sparkles className="mr-2 h-4 w-4" />Generar sensor
+                </Button>
+              </div>
             </div>
           )}
           {trainMutation.isPending && !activeModelId && (
@@ -910,17 +948,6 @@ export default function Results() {
               </div>
               {trainingStatus.data.phase && <p className="text-sm text-muted-foreground">Fase: <span className="font-medium text-foreground">{trainingStatus.data.phase}</span></p>}
               {trainingStatus.data.current_target && <p className="text-sm text-muted-foreground">Objetivo: <span className="font-medium text-foreground">{trainingStatus.data.current_target}</span></p>}
-              {trainingStatus.data.current_epoch != null && trainingStatus.data.total_epochs != null && (
-                <div>
-                  <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                    <span>Época {trainingStatus.data.current_epoch} / {trainingStatus.data.total_epochs}</span>
-                    {trainingStatus.data.val_loss != null && <span>val_loss: {trainingStatus.data.val_loss.toFixed(4)}</span>}
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-olive transition-all duration-500" style={{ width: `${Math.round((trainingStatus.data.current_epoch / trainingStatus.data.total_epochs) * 100)}%` }} />
-                  </div>
-                </div>
-              )}
               {trainingStatus.data.n_train != null && <p className="text-xs text-muted-foreground">{trainingStatus.data.n_train} muestras de entrenamiento{trainingStatus.data.n_val != null ? ` · ${trainingStatus.data.n_val} de validación` : ""}</p>}
               <p className="text-xs text-muted-foreground">ID: {activeModelId}</p>
             </div>
@@ -937,6 +964,11 @@ export default function Results() {
           {activeModelId && trainingStatus.data?.status === "completed" && (
             <div className="space-y-5">
               <div className="flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Entrenamiento completado</p></div>
+              {trainingStatus.data.is_validation === false && (
+                <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  Sensor digital — entrenado con el 100% de los datos, sin validación. No se generan métricas de precisión porque no se reserva conjunto de comparación.
+                </div>
+              )}
               {trainingStatus.data.warnings && trainingStatus.data.warnings.length > 0 && (
                 <div className="rounded-lg border border-satellite-amber/20 bg-satellite-amber/10 p-4 text-sm text-satellite-amber">
                   <ul className="list-disc space-y-1 pl-5">{trainingStatus.data.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
