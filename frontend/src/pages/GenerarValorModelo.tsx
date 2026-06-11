@@ -455,6 +455,11 @@ export default function GenerarValorModelo() {
                   </div>
                 ))}
               </div>
+              {lastPrediction.warnings.length > 0 && (
+                <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-satellite-amber">
+                  {lastPrediction.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )}
             </div>
           )}
         </section>

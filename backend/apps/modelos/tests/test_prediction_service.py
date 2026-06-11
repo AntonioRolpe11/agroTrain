@@ -114,5 +114,26 @@ def test_predict_requires_enough_window_rows(tmp_path):
     _write_sklearn_model(tmp_path, model_id, window_size=3)
 
     with override_settings(MODELS_STORAGE_PATH=tmp_path):
-        with pytest.raises(PredictionServiceError, match="Datos insuficientes"):
+        with pytest.raises(PredictionServiceError, match="días más recientes"):
             PredictionService().predict_one(model_id, _csv(rows=2))
+
+
+@pytest.mark.django_db
+def test_predict_tolerates_old_gaps_with_warning(tmp_path):
+    """Hueco antiguo no impide predecir si la ventana reciente está completa; solo avisa."""
+    model_id = "model-old-gap"
+    _write_sklearn_model(tmp_path, model_id, window_size=2)
+
+    # Falta 2026-04-21 (hueco antiguo); las 2 fechas recientes (04-22, 04-23) están completas.
+    csv = (
+        "date;MCD;tmax\n"
+        "2026-04-20;10;20\n"
+        "2026-04-22;12;22\n"
+        "2026-04-23;13;23\n"
+    ).encode("utf-8")
+
+    with override_settings(MODELS_STORAGE_PATH=tmp_path):
+        result = PredictionService().predict_one(model_id, csv)
+
+    assert isinstance(result["predictions"]["MCD"], float)
+    assert any("2026-04-21" in str(w) or "anteriores" in str(w) for w in result["warnings"])

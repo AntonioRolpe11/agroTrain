@@ -183,7 +183,7 @@ def test_predict_per_target_insufficient_rows(tmp_path):
     _write_per_target_model(tmp_path, model_id, window_size=5)
 
     with override_settings(MODELS_STORAGE_PATH=tmp_path):
-        with pytest.raises(PredictionServiceError, match="insuficientes"):
+        with pytest.raises(PredictionServiceError, match="días más recientes"):
             PredictionService().predict_one(model_id, _csv_for_targets(["MCD"], rows=3))
 
 
