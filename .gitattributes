@@ -1,0 +1,8 @@
+# Normaliza saltos de línea: texto a LF en el repo
+* text=auto
+
+# Scripts de shell SIEMPRE con LF (rompen en contenedores si tienen CRLF)
+*.sh text eol=lf
+
+# Entrypoints sin extensión
+docker-entrypoint* text eol=lf

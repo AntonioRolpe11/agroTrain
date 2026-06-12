@@ -1,7 +1,43 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Django
 db.sqlite3
-model_storage/
+*.sqlite3
+.env
+.env.*
+secrets/
+
+# Test artifacts
 .pytest_cache/
+.pytest_tmp/
+pytest_tmp_run/
+.tmp/
+pytest-cache-files-*/
+htmlcov/
+.coverage
+coverage.xml
+
+# ML model storage (montado como volumen en producción)
+model_storage/
+
+# Dev tools
+.mypy_cache/
+.ruff_cache/
+scripts/training_experiments/
+
+# Git
+.git/
+.gitignore
