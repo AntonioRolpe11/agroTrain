@@ -8,6 +8,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Despliegue dev en VM: aceptar peticiones con cualquier Host (IP publica).
+    allowedHosts: true,
     hmr: {
       overlay: false,
     },

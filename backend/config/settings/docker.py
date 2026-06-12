@@ -21,8 +21,6 @@ DATABASES = {
     }
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
-CORS_ALLOWED_ORIGIN_REGEXES = [r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"]
+# Despliegue de desarrollo (no produccion): el frontend se sirve desde la IP
+# publica de la VM, asi que permitimos cualquier origen. NO usar en produccion.
+CORS_ALLOW_ALL_ORIGINS = True

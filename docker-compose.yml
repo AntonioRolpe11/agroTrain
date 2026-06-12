@@ -23,6 +23,7 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
+      - ./eeproject-492305-fa584ff1a217.json:/app/secrets/gee-key.json:ro
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.docker
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-docker-dev}
@@ -30,9 +31,9 @@ services:
       POSTGRES_USER: agrotrain
       POSTGRES_PASSWORD: agrotrain_dev
       POSTGRES_HOST: db
-      EE_SERVICE_ACCOUNT: ${EE_SERVICE_ACCOUNT:-}
+      EE_SERVICE_ACCOUNT: ${EE_SERVICE_ACCOUNT:-gee-images@eeproject-492305.iam.gserviceaccount.com}
       EE_PRIVATE_KEY_FILE: /app/secrets/gee-key.json
-      EE_PROJECT: ${EE_PROJECT:-}
+      EE_PROJECT: ${EE_PROJECT:-eeproject-492305}
     ports:
       - "8000:8000"
     depends_on:
@@ -46,7 +47,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      VITE_BACKEND_URL: http://localhost:8000
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
