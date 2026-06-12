@@ -63,3 +63,4 @@ htmlcov/
 frontend/coverage/
 catboost_info/
 backend/catboost_info/
+memoria
