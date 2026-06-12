@@ -1,12 +1,25 @@
+from django.conf import settings
 from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from apps.accounts.permissions import IsAdminRole
 from apps.configurador.urls import uvl_urlpatterns
 
 
 def health(_request):
     return JsonResponse({"status": "ok"})
+
+schema_view = (
+    SpectacularAPIView.as_view()
+    if settings.DEBUG
+    else SpectacularAPIView.as_view(permission_classes=[IsAdminRole])
+)
+docs_view = (
+    SpectacularSwaggerView.as_view(url_name="schema")
+    if settings.DEBUG
+    else SpectacularSwaggerView.as_view(url_name="schema", permission_classes=[IsAdminRole])
+)
 
 
 urlpatterns = [
@@ -17,6 +30,6 @@ urlpatterns = [
     path("api/v1/geo/", include("apps.geo.urls")),
     path("api/v1/telemetry/", include("apps.telemetria.urls")),
     path("api/v1/modelos/", include("apps.modelos.urls")),
-    path("schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("schema/", schema_view, name="schema"),
+    path("docs/", docs_view, name="swagger-ui"),
 ]

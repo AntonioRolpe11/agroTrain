@@ -34,12 +34,18 @@ Thumbs.db
 # Modelos ML entrenados (binarios pesados, se regeneran entrenando)
 backend/model_storage/
 
+# Outputs de experimentación ML offline (regenerables)
+backend/scripts/training_experiments/results/*
+!backend/scripts/training_experiments/results/.gitkeep
+
 # Credenciales GEE (nunca al repositorio público)
 eeproject-*.json
 backend/secrets/
 
 # Versiones UVL auto-generadas en runtime
-backend/uvl_versions/
+backend/uvl_versions/*
+!backend/uvl_versions/
+!backend/uvl_versions/v2_olivos_tratamientos.uvl
 
 # Configuración interna Claude Code
 .claude/
@@ -47,3 +53,13 @@ backend/uvl_versions/
 # Ficheros internos de planificación y copias de trabajo
 PLAN.md
 agroTrain - copia.txt
+
+csvs/
+
+# Artefactos de cobertura y catboost (regenerables)
+.coverage
+.coverage.*
+htmlcov/
+frontend/coverage/
+catboost_info/
+backend/catboost_info/

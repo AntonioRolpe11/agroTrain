@@ -97,6 +97,47 @@ export function getNode(rootNode: FeatureModelNode, featureName: string): Featur
   return null;
 }
 
+export interface ObjectiveRecommendation {
+  feature: string;
+  label: string;
+  sensors: string[];
+}
+
+/**
+ * Derives non-blocking sensor recommendations for the selected objective(s) from
+ * the UVL `recommended_sensors` attribute (comma-separated feature names). Sensor
+ * names are mapped to their human labels. Returns [] when no objective is selected
+ * or the selected objective carries no `recommended_sensors` attribute.
+ */
+export function buildObjectiveRecommendations(
+  model: FeatureModelNode,
+  selectedFeatures: string[],
+): ObjectiveRecommendation[] {
+  const objetivoNode = getNode(model, "VariableObjetivo");
+  if (!objetivoNode) return [];
+
+  const objectiveNames = new Set(
+    collectFeatureNames(objetivoNode).filter((n) => n !== "VariableObjetivo"),
+  );
+  const labelMap = buildLabelMap(model);
+
+  const result: ObjectiveRecommendation[] = [];
+  for (const feature of selectedFeatures) {
+    if (!objectiveNames.has(feature)) continue;
+    const node = getNode(model, feature);
+    const raw = node?.attributes?.recommended_sensors as string | undefined;
+    if (!raw) continue;
+    const sensors = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((name) => labelMap.get(name) ?? name);
+    if (sensors.length === 0) continue;
+    result.push({ feature, label: labelMap.get(feature) ?? feature, sensors });
+  }
+  return result;
+}
+
 /**
  * Returns true if every ALTERNATIVE group reachable through MANDATORY paths
  * from node has at least one child in features[]. Stops at OPTIONAL/OR boundaries
@@ -156,13 +197,13 @@ function collectCsvFeaturesRec(
   }
 }
 
-export function buildCropTrainingThresholds(
+export function buildTreatmentTrainingThresholds(
   model: FeatureModelNode,
 ): Record<string, { minReject: number; minWarn: number; minGood: number }> {
-  const cultivoNode = getNode(model, "Cultivo");
-  if (!cultivoNode) return {};
+  const tratamientoNode = getNode(model, "Tratamiento");
+  if (!tratamientoNode) return {};
   const result: Record<string, { minReject: number; minWarn: number; minGood: number }> = {};
-  for (const rel of getRelations(cultivoNode)) {
+  for (const rel of getRelations(tratamientoNode)) {
     for (const child of rel.children ?? []) {
       const a = child.attributes ?? {};
       if (a.min_reject !== undefined && a.min_warn !== undefined && a.min_good !== undefined) {
@@ -211,16 +252,3 @@ function collectCsvColumns(
   }
 }
 
-export function getNodeMap(
-  node: FeatureModelNode,
-  acum = new Map<string, { node: FeatureModelNode; parent: string | null }>(),
-  parent: FeatureModelNode | null = null,
-): Map<string, { node: FeatureModelNode; parent: string | null }> {
-  acum.set(node.name, { node, parent: parent?.name ?? null });
-  for (const relation of node.relations ?? []) {
-    for (const child of relation.children ?? []) {
-      getNodeMap(child, acum, node);
-    }
-  }
-  return acum;
-}

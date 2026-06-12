@@ -13,14 +13,10 @@ flamapy-bdd==2.5.0
 # Análisis SAT (en Windows/Python 3.13 puede requerir Build Tools C++)
 flamapy-sat==2.5.0; python_version < "3.13"
 
-# Validación geográfica
-shapely==2.0.7
-
 # Telemetría satelital (Google Earth Engine)
 earthengine-api>=0.1.420
 
 # Modelos predictivos
-tensorflow>=2.21
 scikit-learn>=1.4
 pandas>=2.0
 numpy>=1.26

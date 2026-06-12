@@ -48,9 +48,14 @@ import {
 import { mergeSensorFiles, type MergedSensorResult, type SensorFileInput } from "@/lib/sensorMerger";
 import { calculateDendroParams } from "@/lib/dendroCalc";
 import type { TargetMetrics } from "@/types/api";
-import { getNode, getRelationChildren, buildCsvColumnInfo, buildCropTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
+import { ValSeriesChart } from "@/components/results/ValSeriesChart";
+import { getNode, getRelationChildren, buildCsvColumnInfo, buildTreatmentTrainingThresholds, collectCsvFeatures } from "@/utils/featureModel";
 
-const HARDCODED_SENSOR_IDS = new Set(["DatoMCD", "DatoTB", "DatoTS", "TemperaturaAire"]);
+const TEMPERATURE_FEATURE_ID = "TemperaturaAire";
+// Sensores de evento (riego, lluvia): el valor diario es la SUMA de los eventos del día, no la media.
+// Hardcode por csv_col, mismo patrón que TemperaturaAire (min/max) — agregación especial no expresable
+// genéricamente en el UVL.
+const SUM_AGGREGATED_COLS = new Set(["riego", "lluvia"]);
 
 interface SensorFileEntry {
   dataset: GenericCsvDataset | null;
@@ -100,6 +105,13 @@ function getTrainingDataLevel(rows: number, t: { minReject: number; minWarn: num
   return "good";
 }
 
+function getCsvCols(node: { attributes?: Record<string, unknown> } | null): string[] {
+  const attrs = node?.attributes ?? {};
+  if (attrs.csv_col) return [String(attrs.csv_col)];
+  if (attrs.csv_cols) return String(attrs.csv_cols).split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
 
 export default function Results() {
   const featureModelQuery = useFeatureModelQuery();
@@ -107,17 +119,18 @@ export default function Results() {
   const { geo } = useGeo();
   const extractTelemetryMutation = useExtractTelemetryMutation();
   const trainMutation = useTrainModelMutation();
+  const [sensorType, setSensorType] = useState<"validacion" | "digital">("validacion");
 
   const features = trees[0]?.features ?? [];
   const model = featureModelQuery.data ?? null;
 
   // Derive config from features + model
-  const cultivoNode = model ? getNode(model, "Cultivo") : null;
-  const selectedCropNode = cultivoNode
-    ? getRelationChildren(cultivoNode).find((c) => features.includes(c.name))
+  const tratamientoNode = model ? getNode(model, "Tratamiento") : null;
+  const selectedTreatmentNode = tratamientoNode
+    ? getRelationChildren(tratamientoNode).find((c) => features.includes(c.name))
     : null;
-  const cropName = selectedCropNode?.name ?? null;
-  const cropLabel = (selectedCropNode?.attributes?.label as string | undefined) ?? cropName ?? "No seleccionado";
+  const treatmentName = selectedTreatmentNode?.name ?? null;
+  const treatmentLabel = (selectedTreatmentNode?.attributes?.label as string | undefined) ?? treatmentName ?? "No seleccionado";
 
   const sueloNode = model ? getNode(model, "TipoSuelo") : null;
   const selectedSueloNode = sueloNode
@@ -131,17 +144,35 @@ export default function Results() {
     : null;
   const objetivoLabel = (selectedObjetivoNode?.attributes?.label as string | undefined) ?? selectedObjetivoNode?.name ?? "";
 
-  const tempRequired = features.includes("TemperaturaAire");
+  const tempRequired = features.includes(TEMPERATURE_FEATURE_ID);
+
+  const dendroSensors = useMemo(() => {
+    const dendroNode = model ? getNode(model, "Dendrometro") : null;
+    return dendroNode
+      ? getRelationChildren(dendroNode)
+          .map((node) => ({
+            featureName: node.name,
+            label: (node.attributes?.label as string | undefined) ?? node.name,
+            csvCol: getCsvCols(node)[0] ?? node.name,
+          }))
+          .filter((sensor) => features.includes(sensor.featureName))
+      : [];
+  }, [model, features]);
+
+  const dendroFeatureIds = useMemo(
+    () => new Set([...dendroSensors.map((sensor) => sensor.featureName), TEMPERATURE_FEATURE_ID]),
+    [dendroSensors],
+  );
 
   const genericSensors = useMemo(
-    () => model ? collectCsvFeatures(model, features, HARDCODED_SENSOR_IDS) : [],
-    [model, features],
+    () => model ? collectCsvFeatures(model, features, dendroFeatureIds) : [],
+    [model, features, dendroFeatureIds],
   );
 
   const activeDendroParams = {
-    mcd: features.includes("DatoMCD"),
-    tb: features.includes("DatoTB"),
-    ts: features.includes("DatoTS"),
+    mcd: dendroSensors.some((sensor) => sensor.csvCol === "MCD"),
+    tb: dendroSensors.some((sensor) => sensor.csvCol === "TasaBuenos"),
+    ts: dendroSensors.some((sensor) => sensor.csvCol === "TasaSeveros"),
   };
 
   const telemetryColumnInfo = useMemo(
@@ -153,13 +184,28 @@ export default function Results() {
     [telemetryColumnInfo],
   );
 
-  const cropThresholds = useMemo(
-    () => (model ? buildCropTrainingThresholds(model) : {}),
+  const treatmentThresholds = useMemo(
+    () => (model ? buildTreatmentTrainingThresholds(model) : {}),
     [model],
   );
-  const activeCropThreshold = (cropName ? cropThresholds[cropName] : null) ?? DEFAULT_THRESHOLD;
+  const activeTreatmentThreshold = (treatmentName ? treatmentThresholds[treatmentName] : null) ?? DEFAULT_THRESHOLD;
 
-  const selectedTelemetry = telemetryColumnInfo.dataColumns.filter((col) => features.includes(col));
+  const selectedTelemetry = useMemo(() => {
+    const telemetryNode = model ? getNode(model, "DatosTelemetria") : null;
+    return telemetryNode
+      ? getRelationChildren(telemetryNode)
+          .filter((node) => features.includes(node.name) && getCsvCols(node).length > 0)
+          .map((node) => node.name)
+      : [];
+  }, [model, features]);
+  const selectedTelemetryColumns = useMemo(() => {
+    const telemetryNode = model ? getNode(model, "DatosTelemetria") : null;
+    return telemetryNode
+      ? getRelationChildren(telemetryNode)
+          .filter((node) => features.includes(node.name))
+          .flatMap((node) => getCsvCols(node))
+      : [];
+  }, [model, features]);
 
   // Sensor files
   const [dendroFile, setDendroFile] = useState<SensorFileEntry>(emptyEntry);
@@ -187,42 +233,44 @@ export default function Results() {
 
   const selectedSensors = useMemo(() => {
     const items = genericSensors.map((s) => s.label);
-    for (const id of features) {
-      if (!HARDCODED_SENSOR_IDS.has(id)) continue;
-      const n = model ? getNode(model, id) : null;
-      items.push((n?.attributes?.label as string | undefined) ?? id);
+    items.push(...dendroSensors.map((sensor) => sensor.label));
+    if (tempRequired) {
+      const tempNode = model ? getNode(model, TEMPERATURE_FEATURE_ID) : null;
+      items.push((tempNode?.attributes?.label as string | undefined) ?? TEMPERATURE_FEATURE_ID);
     }
     return items;
-  }, [genericSensors, features, model]);
+  }, [genericSensors, dendroSensors, tempRequired, model]);
 
   const telemetryWarnings = useMemo(
-    () => (telemetryCsv ? [...telemetryCsv.warnings, ...buildTelemetryWarnings(telemetryCsv, selectedTelemetry)] : []),
-    [telemetryCsv, selectedTelemetry],
+    () => (telemetryCsv ? [...telemetryCsv.warnings, ...buildTelemetryWarnings(telemetryCsv, selectedTelemetryColumns)] : []),
+    [telemetryCsv, selectedTelemetryColumns],
   );
 
   const allSensorFilesReady = useMemo(() => {
-    const dendroOk = Boolean(dendroFile.dataset && !dendroFile.dataset.errors.length && dendroFile.timestampCol && dendroFile.dataCol);
+    const dendroOk = dendroSensors.length === 0 || Boolean(dendroFile.dataset && !dendroFile.dataset.errors.length && dendroFile.timestampCol && dendroFile.dataCol);
     const genericOk = genericSensors.every((s) => {
       const e = genericSensorFiles[s.featureName];
       return e?.dataset && !e.dataset.errors.length && e.timestampCol && e.dataCol;
     });
     const tempOk = !tempRequired || Boolean(tempFile.dataset && !tempFile.dataset.errors.length && tempFile.timestampCol && tempFile.dataCol);
     return dendroOk && genericOk && tempOk;
-  }, [dendroFile, genericSensorFiles, tempFile, genericSensors, tempRequired]);
+  }, [dendroFile, genericSensorFiles, tempFile, genericSensors, tempRequired, dendroSensors]);
 
   // Auto-sync date range from CSV files
   useEffect(() => {
     const inputs: SensorFileInput[] = [];
     if (dendroFile.dataset && dendroFile.timestampCol && dendroFile.dataCol) {
       const dendroCalc = calculateDendroParams(dendroFile.dataset.allRows, dendroFile.timestampCol, dendroFile.dataCol, activeDendroParams);
-      if (dendroCalc.mcd) inputs.push({ canonicalCol: "MCD", precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.tb) inputs.push({ canonicalCol: "TasaBuenos", precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.ts) inputs.push({ canonicalCol: "TasaSeveros", precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      for (const sensor of dendroSensors) {
+        if (sensor.csvCol === "MCD" && dendroCalc.mcd) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaBuenos" && dendroCalc.tb) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaSeveros" && dendroCalc.ts) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      }
     }
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];
       if (e?.dataset && e.timestampCol && e.dataCol) {
-        inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol });
+        inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol, aggregation: SUM_AGGREGATED_COLS.has(sensor.csvCol) ? "sum" : undefined });
       }
     }
     if (tempRequired && tempFile.dataset && tempFile.timestampCol && tempFile.dataCol) {
@@ -233,7 +281,7 @@ export default function Results() {
     const { dateRange } = mergeSensorFiles(inputs);
     if (dateRange) { setTelemetryStartDate(dateRange[0]); setTelemetryEndDate(dateRange[1]); setDatesFromCsv(true); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dendroFile, genericSensorFiles, tempFile, genericSensors, tempRequired]);
+  }, [dendroFile, genericSensorFiles, tempFile, genericSensors, tempRequired, dendroSensors]);
 
   const extractedTelemetry = extractTelemetryMutation.data?.success ? extractTelemetryMutation.data : null;
   const extractedTelemetryErrors = useMemo(() => {
@@ -244,9 +292,9 @@ export default function Results() {
 
   const canExtractTelemetry = !telemetryCsv && selectedTelemetry.length > 0 && Boolean(geo.punto);
   const telemetrySource = telemetryCsv && telemetryCsv.errors.length === 0 ? "csv" : extractedTelemetry ? "gee" : null;
-  const canFuse = allSensorFilesReady && telemetrySource !== null && selectedTelemetry.length > 0;
+  const canFuse = allSensorFilesReady && (selectedTelemetry.length === 0 || telemetrySource !== null);
 
-  const fusedDataLevel = fusionResult ? getTrainingDataLevel(fusionResult.rowCount, activeCropThreshold) : "reject";
+  const fusedDataLevel = fusionResult ? getTrainingDataLevel(fusionResult.rowCount, activeTreatmentThreshold) : "reject";
   const isPollingTraining = trainingStatus.data?.status === "training";
   const canTrain = fusionResult !== null && fusedDataLevel !== "reject" && !trainMutation.isPending && !isPollingTraining && !activeModelId;
 
@@ -262,9 +310,9 @@ export default function Results() {
   }, [dendroFile, genericSensorFiles, tempFile, genericSensors, tempRequired]);
 
   const qualitySummary = useMemo(() => {
-    const totalSensorFiles = 1 + genericSensors.length + (tempRequired ? 1 : 0);
+    const totalSensorFiles = (dendroSensors.length > 0 ? 1 : 0) + genericSensors.length + (tempRequired ? 1 : 0);
     const loadedSensorFiles =
-      (dendroFile.dataset ? 1 : 0) +
+      (dendroSensors.length > 0 && dendroFile.dataset ? 1 : 0) +
       genericSensors.filter((s) => genericSensorFiles[s.featureName]?.dataset).length +
       (tempRequired && tempFile.dataset ? 1 : 0);
     const errors = [
@@ -310,7 +358,7 @@ export default function Results() {
       : "Datos predeterminados / extracción Earth Engine disponible";
 
     return { tone, title, description, errors, warnings, totalRows, sensorsSource, telemetrySource: telemetrySourceLabel };
-  }, [genericSensors, genericSensorFiles, tempRequired, dendroFile, tempFile, sensorFileErrors, telemetryCsv, extractedTelemetryErrors, mergedSensors, telemetryWarnings, extractedTelemetry, allSensorFilesReady]);
+  }, [genericSensors, genericSensorFiles, tempRequired, dendroFile, tempFile, sensorFileErrors, telemetryCsv, extractedTelemetryErrors, mergedSensors, telemetryWarnings, extractedTelemetry, allSensorFilesReady, dendroSensors]);
 
   const handleSensorFileUpload = async (sensorType: string, file: File) => {
     const setLoading = (loading: boolean) => {
@@ -363,13 +411,15 @@ export default function Results() {
     if (dendroFile.dataset && dendroFile.timestampCol && dendroFile.dataCol) {
       const dendroCalc = calculateDendroParams(dendroFile.dataset.allRows, dendroFile.timestampCol, dendroFile.dataCol, activeDendroParams);
       if (dendroCalc.warnings.length > 0) dendroCalc.warnings.forEach((w) => toast.warning("Dendrómetro", { description: w }));
-      if (dendroCalc.mcd) inputs.push({ canonicalCol: "MCD", precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.tb) inputs.push({ canonicalCol: "TasaBuenos", precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.ts) inputs.push({ canonicalCol: "TasaSeveros", precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      for (const sensor of dendroSensors) {
+        if (sensor.csvCol === "MCD" && dendroCalc.mcd) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaBuenos" && dendroCalc.tb) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaSeveros" && dendroCalc.ts) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      }
     }
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];
-      if (e?.dataset && e.timestampCol && e.dataCol) inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol });
+      if (e?.dataset && e.timestampCol && e.dataCol) inputs.push({ canonicalCol: sensor.csvCol, dataset: e.dataset, timestampCol: e.timestampCol, dataCol: e.dataCol, aggregation: SUM_AGGREGATED_COLS.has(sensor.csvCol) ? "sum" : undefined });
     }
     if (tempRequired && tempFile.dataset && tempFile.timestampCol && tempFile.dataCol) {
       inputs.push({ canonicalCol: "tmin", dataset: tempFile.dataset, timestampCol: tempFile.timestampCol, dataCol: tempFile.dataCol, aggregation: "min" });
@@ -379,12 +429,16 @@ export default function Results() {
     setMergedSensors(merged);
     if (merged.dateRange) { setTelemetryStartDate(merged.dateRange[0]); setTelemetryEndDate(merged.dateRange[1]); }
 
-    const telemetryPoints = telemetrySource === "gee" && extractedTelemetry
-      ? extractedTelemetry.points
-      : csvRowsToTelemetryPoints(telemetryCsv!.allRows, telemetryCsv!.headers);
+    const telemetryPoints = selectedTelemetry.length === 0
+      ? []
+      : telemetrySource === "gee" && extractedTelemetry
+        ? extractedTelemetry.points
+        : csvRowsToTelemetryPoints(telemetryCsv!.allRows, telemetryCsv!.headers, selectedTelemetryColumns);
     const activeIndices = telemetrySource === "gee" && extractedTelemetry
       ? extractedTelemetry.indices
-      : telemetryCsv!.recognizedDataColumns.filter((col) => telemetryColumnInfo.dataColumns.includes(col));
+      : selectedTelemetry.length === 0
+        ? []
+        : telemetryCsv!.recognizedDataColumns.filter((col) => selectedTelemetryColumns.includes(col));
 
     const result = fuseSensorAndTelemetry({
       sensorRows: merged.rows, sensorHeaders: merged.headers,
@@ -419,7 +473,7 @@ export default function Results() {
     const csvContent = fusionResultToCsv(fusionResult, ";");
     const csvBlob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     try {
-      const result = await trainMutation.mutateAsync({ features, csvBlob, geo });
+      const result = await trainMutation.mutateAsync({ features, csvBlob, geo, isValidation: sensorType === "validacion" });
       setActiveModelId(result.model_id);
       toast.success("Entrenamiento iniciado", { description: `Modelo ${result.model_id.slice(0, 8)}… en proceso.` });
     } catch (err) {
@@ -447,7 +501,7 @@ export default function Results() {
     <div className="section-container max-w-7xl py-10">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">Validación del modelo y datos de entrenamiento</h1>
+          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">{sensorType === "digital" ? "Generación del sensor digital y datos de entrenamiento" : "Validación del modelo y datos de entrenamiento"}</h1>
           <p className="animate-reveal-up text-muted-foreground" style={{ animationDelay: "60ms" }}>
             Revisa la configuración seleccionada, añade tus CSV de sensores y telemetría, y deja preparado el paso previo a generar el sensor digital.
           </p>
@@ -494,8 +548,8 @@ export default function Results() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Cultivo</span>
-                  <p className="font-medium">{cropLabel}</p>
+                  <span className="text-muted-foreground">Tratamiento</span>
+                  <p className="font-medium">{treatmentLabel}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Tipo de suelo</span>
@@ -527,20 +581,29 @@ export default function Results() {
                   </div>
                 </div>
               </div>
-              {selectedCropNode?.attributes?.preferred_algorithm && (
-                <div className="border-t border-border/60 pt-3 text-sm">
-                  <span className="text-muted-foreground">Algoritmo preferido</span>
-                  <p className="mt-0.5 font-medium">
-                    {String(selectedCropNode.attributes.preferred_algorithm)}
-                    {selectedCropNode.attributes.window_size && (
-                      <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(selectedCropNode.attributes.window_size)} días</span>
-                    )}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Algoritmo de referencia para este cultivo. El sistema puede usar GradientBoosting si el volumen de datos es insuficiente para LSTM.
-                  </p>
-                </div>
-              )}
+              {(() => {
+                const targetAlgo = selectedObjetivoNode?.attributes?.preferred_algorithm as string | undefined;
+                const treatmentAlgo = selectedTreatmentNode?.attributes?.preferred_algorithm as string | undefined;
+                const algo = targetAlgo ?? treatmentAlgo;
+                if (!algo) return null;
+                const targetWindow = selectedObjetivoNode?.attributes?.window_size_override;
+                const treatmentWindow = selectedTreatmentNode?.attributes?.window_size;
+                const window = targetWindow ?? treatmentWindow;
+                return (
+                  <div className="border-t border-border/60 pt-3 text-sm">
+                    <span className="text-muted-foreground">Algoritmo preferido</span>
+                    <p className="mt-0.5 font-medium">
+                      {String(algo)}
+                      {window && (
+                        <span className="ml-1.5 font-normal text-muted-foreground">· ventana {String(window)} días</span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Algoritmo asociado al objetivo, derivado del UVL.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </section>
@@ -690,8 +753,7 @@ export default function Results() {
         </section>
 
         {/* 3. Fusión */}
-        {canFuse && (
-          <section className="config-block animate-reveal-up" style={{ animationDelay: "165ms" }}>
+        <section className={`config-block animate-reveal-up transition-opacity${canFuse ? "" : " opacity-50"}`} style={{ animationDelay: "165ms" }}>
             <div className="mb-5 flex items-start gap-3">
               <div className="rounded-lg bg-primary/10 p-2 text-olive"><GitMerge className="h-5 w-5" /></div>
               <div>
@@ -699,18 +761,27 @@ export default function Results() {
                 <p className="text-sm text-muted-foreground">Unifica los archivos de sensores a resolución diaria y combínalos con telemetría alineando por fecha.</p>
               </div>
             </div>
-            <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <Info className="mt-0.5 h-4 w-4 shrink-0 text-olive" />
-                {mergedSensors?.dateRange ? (
-                  <p>Rango de datos de sensores: <span className="font-medium text-foreground">{mergedSensors.dateRange[0]}</span> — <span className="font-medium text-foreground">{mergedSensors.dateRange[1]}</span>. Se añadirán las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
-                ) : (
-                  <p>Todos los archivos de sensor están listos. Se unificarán a resolución diaria y se fusionarán con las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
-                )}
+            {!canFuse ? (
+              <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>{!allSensorFilesReady ? "Carga todos los archivos de sensor requeridos para poder fusionar." : "Extrae o carga los datos de telemetría antes de fusionar."}</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mb-4 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-olive" />
+                  {mergedSensors?.dateRange ? (
+                    <p>Rango de datos de sensores: <span className="font-medium text-foreground">{mergedSensors.dateRange[0]}</span> — <span className="font-medium text-foreground">{mergedSensors.dateRange[1]}</span>. Se añadirán las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
+                  ) : (
+                    <p>Todos los archivos de sensor están listos. Se unificarán a resolución diaria y se fusionarán con las columnas de telemetría ({selectedTelemetry.join(", ")}, cloudCover).</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
+              <Button onClick={handleFuse} disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
               {fusionResult && (
                 <Button variant="outline" onClick={handleDownloadFusion}><FileDown className="mr-2 h-4 w-4" />Descargar CSV fusionado</Button>
               )}
@@ -723,7 +794,7 @@ export default function Results() {
                   <div className="rounded-lg border border-border bg-muted/20 p-3"><p className="text-muted-foreground">Interpoladas / clampeadas</p><p className="mt-1 font-medium">{fusionResult.interpolatedCount}</p></div>
                 </div>
                 {(() => {
-                  const t = activeCropThreshold;
+                  const t = activeTreatmentThreshold;
                   if (fusedDataLevel === "reject") return (
                     <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
                       <p className="font-semibold">Datos insuficientes para entrenar</p>
@@ -733,7 +804,7 @@ export default function Results() {
                   if (fusedDataLevel === "warn") return (
                     <div className="rounded-lg border border-satellite-amber/30 bg-satellite-amber/10 p-4 text-sm text-satellite-amber">
                       <p className="font-semibold">Datos limitados — calidad del modelo reducida</p>
-                      <p className="mt-1">Con <strong>{fusionResult.rowCount} filas</strong> el modelo puede entrenarse, pero los resultados serán poco fiables. Se usará RandomForest automáticamente (LSTM requiere al menos <strong>{t.minWarn}</strong> filas). Para resultados sólidos se recomiendan <strong>{t.minGood}+</strong> filas.</p>
+                      <p className="mt-1">Con <strong>{fusionResult.rowCount} filas</strong> el modelo puede entrenarse, pero los resultados serán poco fiables (se recomiendan al menos <strong>{t.minWarn}</strong> filas). Para resultados sólidos se recomiendan <strong>{t.minGood}+</strong> filas.</p>
                     </div>
                   );
                   if (fusedDataLevel === "acceptable") return (
@@ -774,8 +845,7 @@ export default function Results() {
                 </div>
               </div>
             )}
-          </section>
-        )}
+        </section>
 
         {/* 4. Calidad */}
         <section className="config-block animate-reveal-up" style={{ animationDelay: "200ms" }}>
@@ -816,15 +886,52 @@ export default function Results() {
             </div>
           </div>
           {!activeModelId && !trainMutation.isPending && (
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-muted-foreground">
-                {!fusionResult ? "Primero fusiona los datos de sensores y telemetría en la sección 3."
-                  : fusedDataLevel === "reject" ? "Los datos fusionados no alcanzan el mínimo necesario para entrenar."
-                  : "El CSV fusionado está listo. Pulsa el botón para iniciar el entrenamiento."}
-              </p>
-              <Button onClick={() => void handleGenerateSensor()} disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
-                <Sparkles className="mr-2 h-4 w-4" />Generar sensor
-              </Button>
+            <div className="flex flex-col gap-5">
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="mb-3 text-sm font-medium">Tipo de sensor digital</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="sensorType"
+                      className="mt-1"
+                      checked={sensorType === "validacion"}
+                      onChange={() => setSensorType("validacion")}
+                    />
+                    <span>
+                      <span className="font-medium">Sensor digital de validación</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Hay sensor físico con el que comparar y quieres medir la precisión → split 80/20 + métricas (MAE/RMSE/R²).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="sensorType"
+                      className="mt-1"
+                      checked={sensorType === "digital"}
+                      onChange={() => setSensorType("digital")}
+                    />
+                    <span>
+                      <span className="font-medium">Sensor digital</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Sólo quieres el predictor → entrena con el 100% de los datos. No genera métricas de validación.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {!fusionResult ? "Primero fusiona los datos de sensores y telemetría en la sección 3."
+                    : fusedDataLevel === "reject" ? "Los datos fusionados no alcanzan el mínimo necesario para entrenar."
+                    : "El CSV fusionado está listo. Pulsa el botón para iniciar el entrenamiento."}
+                </p>
+                <Button onClick={() => void handleGenerateSensor()} disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
+                  <Sparkles className="mr-2 h-4 w-4" />Generar sensor
+                </Button>
+              </div>
             </div>
           )}
           {trainMutation.isPending && !activeModelId && (
@@ -841,17 +948,6 @@ export default function Results() {
               </div>
               {trainingStatus.data.phase && <p className="text-sm text-muted-foreground">Fase: <span className="font-medium text-foreground">{trainingStatus.data.phase}</span></p>}
               {trainingStatus.data.current_target && <p className="text-sm text-muted-foreground">Objetivo: <span className="font-medium text-foreground">{trainingStatus.data.current_target}</span></p>}
-              {trainingStatus.data.current_epoch != null && trainingStatus.data.total_epochs != null && (
-                <div>
-                  <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                    <span>Época {trainingStatus.data.current_epoch} / {trainingStatus.data.total_epochs}</span>
-                    {trainingStatus.data.val_loss != null && <span>val_loss: {trainingStatus.data.val_loss.toFixed(4)}</span>}
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full bg-olive transition-all duration-500" style={{ width: `${Math.round((trainingStatus.data.current_epoch / trainingStatus.data.total_epochs) * 100)}%` }} />
-                  </div>
-                </div>
-              )}
               {trainingStatus.data.n_train != null && <p className="text-xs text-muted-foreground">{trainingStatus.data.n_train} muestras de entrenamiento{trainingStatus.data.n_val != null ? ` · ${trainingStatus.data.n_val} de validación` : ""}</p>}
               <p className="text-xs text-muted-foreground">ID: {activeModelId}</p>
             </div>
@@ -868,6 +964,11 @@ export default function Results() {
           {activeModelId && trainingStatus.data?.status === "completed" && (
             <div className="space-y-5">
               <div className="flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Entrenamiento completado</p></div>
+              {trainingStatus.data.is_validation === false && (
+                <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  Sensor digital — entrenado con el 100% de los datos, sin validación. No se generan métricas de precisión porque no se reserva conjunto de comparación.
+                </div>
+              )}
               {trainingStatus.data.warnings && trainingStatus.data.warnings.length > 0 && (
                 <div className="rounded-lg border border-satellite-amber/20 bg-satellite-amber/10 p-4 text-sm text-satellite-amber">
                   <ul className="list-disc space-y-1 pl-5">{trainingStatus.data.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
@@ -897,6 +998,16 @@ export default function Results() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              )}
+              {trainingStatus.data.val_series && Object.keys(trainingStatus.data.val_series).length > 0 && (
+                <div>
+                  <p className="mb-3 text-sm font-medium">Real vs predicho (conjunto de validación)</p>
+                  <div className="space-y-5">
+                    {Object.entries(trainingStatus.data.val_series).map(([target, series]) => (
+                      <ValSeriesChart key={target} target={target} series={series} />
+                    ))}
                   </div>
                 </div>
               )}

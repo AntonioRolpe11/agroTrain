@@ -2,21 +2,31 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, GitMerge, History, Loader2, Play, Satellite, Sparkles, Thermometer, TreeDeciduous } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { SensorFileCard } from "@/components/config/SensorFileCard";
+import { SensorLocationMap } from "@/components/results/SensorLocationMap";
 import { TelemetryPreview } from "@/components/results/TelemetryPreview";
 import { Button } from "@/components/ui/button";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { useExtractTelemetryMutation, useFeatureModelQuery } from "@/hooks/useConfiguratorApi";
 import { useModelDetailQuery, usePredictionHistoryQuery, usePredictModelMutation } from "@/hooks/useModelosApi";
 import { calculateDendroParams } from "@/lib/dendroCalc";
-import { csvRowsToTelemetryPoints, fuseSensorAndTelemetry, fusionResultToCsv, type FusionResult } from "@/lib/dataFusion";
+import { fuseSensorAndTelemetry, fusionResultToCsv, type FusionResult } from "@/lib/dataFusion";
 import { parseCsvFileGeneric, type GenericCsvDataset } from "@/lib/csvDataset";
 import { mergeSensorFiles, type SensorFileInput } from "@/lib/sensorMerger";
-import { buildCsvColumnInfo, collectCsvFeatures } from "@/utils/featureModel";
+import { buildCsvColumnInfo, collectCsvFeatures, getNode, getRelationChildren } from "@/utils/featureModel";
 
-const HARDCODED_SENSOR_IDS = new Set(["DatoMCD", "DatoTB", "DatoTS", "TemperaturaAire"]);
 const TARGET_SENSOR_COLS = new Set(["MCD", "TasaBuenos", "TasaSeveros"]);
+const TEMPERATURE_FEATURE_ID = "TemperaturaAire";
+const CHART_COLORS = ["#4a7c3f", "#d97706", "#2563eb", "#dc2626", "#7c3aed", "#0891b2"];
+
+function getCsvCols(node: { attributes?: Record<string, unknown> } | null): string[] {
+  const attrs = node?.attributes ?? {};
+  if (attrs.csv_col) return [String(attrs.csv_col)];
+  if (attrs.csv_cols) return String(attrs.csv_cols).split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
 
 interface SensorFileEntry {
   dataset: GenericCsvDataset | null;
@@ -36,6 +46,19 @@ function fmt(iso?: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function fmtDate(dateStr: string | number) {
+  const s = String(dateStr);
+  const [y, m, d] = s.split("-");
+  if (!y || !m || !d) return s;
+  return `${d}/${m}/${y}`;
+}
+
+function addOneDay(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().split("T")[0];
 }
 
 function getDateRangeFromRows(rows: Array<Record<string, unknown>>): [string, string] | null {
@@ -67,11 +90,23 @@ export default function GenerarValorModelo() {
     () => telemetryColumnInfo.dataColumns.filter((col) => requiredCols.has(col)),
     [requiredCols, telemetryColumnInfo],
   );
+  const dendroSensors = useMemo(() => {
+    const dendroNode = featureModel ? getNode(featureModel, "Dendrometro") : null;
+    return dendroNode
+      ? getRelationChildren(dendroNode)
+          .map((node) => ({ featureName: node.name, csvCol: getCsvCols(node)[0] ?? node.name }))
+          .filter((sensor) => requiredCols.has(sensor.csvCol))
+      : [];
+  }, [featureModel, requiredCols]);
+  const excludedSensorIds = useMemo(
+    () => new Set([...dendroSensors.map((sensor) => sensor.featureName), TEMPERATURE_FEATURE_ID]),
+    [dendroSensors],
+  );
   const genericSensors = useMemo(
     () => featureModel && model
-      ? collectCsvFeatures(featureModel, features, HARDCODED_SENSOR_IDS).filter((s) => requiredCols.has(s.csvCol))
+      ? collectCsvFeatures(featureModel, features, excludedSensorIds).filter((s) => requiredCols.has(s.csvCol))
       : [],
-    [featureModel, features, model, requiredCols],
+    [featureModel, features, model, requiredCols, excludedSensorIds],
   );
 
   const requiredTargetCols = useMemo(
@@ -115,7 +150,37 @@ export default function GenerarValorModelo() {
   const telemetryReady = selectedTelemetry.length === 0 || Boolean(extractedTelemetry);
   const canExtractTelemetry = selectedTelemetry.length > 0 && Boolean(punto);
   const canFuse = allSensorFilesReady && telemetryReady;
-  const canPredict = Boolean(fusionResult && model && fusionResult.rowCount >= model.window_size && !predictMutation.isPending);
+
+  const recentHistory = historyQuery.data?.predictions ?? [];
+
+  const predictedForDate = useMemo(() => {
+    if (!fusionResult) return null;
+    const range = fusionResult.sensorDateRange ?? getDateRangeFromRows(fusionResult.rows);
+    return range ? addOneDay(range[1]) : null;
+  }, [fusionResult]);
+
+  const duplicateExists = useMemo(
+    () => Boolean(predictedForDate && recentHistory.some((p) => p.predicted_for_date === predictedForDate)),
+    [predictedForDate, recentHistory],
+  );
+
+  const canPredict = Boolean(
+    fusionResult &&
+    model &&
+    fusionResult.rowCount >= model.window_size &&
+    !predictMutation.isPending &&
+    !duplicateExists,
+  );
+
+  const chartData = useMemo(() => {
+    if (!recentHistory.length) return [];
+    return [...recentHistory]
+      .sort((a, b) => a.predicted_for_date.localeCompare(b.predicted_for_date))
+      .map((p) => ({
+        date: p.predicted_for_date,
+        ...Object.fromEntries(Object.entries(p.predictions).map(([k, v]) => [k, Number(v.toFixed(4))])),
+      }));
+  }, [recentHistory]);
 
   const handleSensorFileUpload = async (sensorType: string, file: File) => {
     const setLoading = (loading: boolean) => {
@@ -143,9 +208,11 @@ export default function GenerarValorModelo() {
     if (dendroRequired && dendroFile.dataset && dendroFile.timestampCol && dendroFile.dataCol) {
       const dendroCalc = calculateDendroParams(dendroFile.dataset.allRows, dendroFile.timestampCol, dendroFile.dataCol, activeDendroParams);
       dendroCalc.warnings.forEach((w) => toast.warning("Dendrómetro", { description: w }));
-      if (dendroCalc.mcd && requiredCols.has("MCD")) inputs.push({ canonicalCol: "MCD", precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.tb && requiredCols.has("TasaBuenos")) inputs.push({ canonicalCol: "TasaBuenos", precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
-      if (dendroCalc.ts && requiredCols.has("TasaSeveros")) inputs.push({ canonicalCol: "TasaSeveros", precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      for (const sensor of dendroSensors) {
+        if (sensor.csvCol === "MCD" && dendroCalc.mcd) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.mcd, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaBuenos" && dendroCalc.tb) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.tb, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+        if (sensor.csvCol === "TasaSeveros" && dendroCalc.ts) inputs.push({ canonicalCol: sensor.csvCol, precomputedDaily: dendroCalc.ts, dataset: dendroFile.dataset, timestampCol: dendroFile.timestampCol, dataCol: dendroFile.dataCol });
+      }
     }
     for (const sensor of genericSensors) {
       const e = genericSensorFiles[sensor.featureName];
@@ -167,10 +234,17 @@ export default function GenerarValorModelo() {
       toast.error("Carga primero sensores", { description: "Se necesita el rango temporal de los sensores para extraer telemetría." });
       return;
     }
+    // Colchón hacia atrás: en ventanas cortas el rango del sensor puede no contener
+    // ninguna pasada limpia de Sentinel-2 (revisita ~5 días + filtro de nubes).
+    // Ampliamos solo el inicio; la fusión propaga (clamp forward) el último índice
+    // observado hacia los días del sensor, sin añadir filas extra al CSV final.
+    const TELEMETRY_LOOKBACK_DAYS = 15;
+    const bufferedStart = new Date(range[0]);
+    bufferedStart.setDate(bufferedStart.getDate() - TELEMETRY_LOOKBACK_DAYS);
     await extractTelemetryMutation.mutateAsync({
       features: [...new Set([...features, ...selectedTelemetry])],
       punto,
-      startDate: range[0],
+      startDate: bufferedStart.toISOString().slice(0, 10),
       endDate: range[1],
       cloudThreshold,
     });
@@ -193,12 +267,17 @@ export default function GenerarValorModelo() {
   const handlePredict = async () => {
     if (!modelId || !fusionResult || !canPredict) return;
     const csvContent = fusionResultToCsv(fusionResult, ";");
-    const csvBlob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const csvBlob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     try {
       await predictMutation.mutateAsync({ modelId, csvBlob });
       toast.success("Valor generado correctamente");
     } catch (err) {
-      toast.error("Error al generar valor", { description: err instanceof Error ? err.message : "Error desconocido." });
+      const msg = err instanceof Error ? err.message : "Error desconocido.";
+      if (msg.startsWith("409")) {
+        toast.error("Predicción duplicada", { description: `Ya existe un valor generado para el ${predictedForDate ?? "esa fecha"}.` });
+      } else {
+        toast.error("Error al generar valor", { description: msg });
+      }
     }
   };
 
@@ -226,7 +305,7 @@ export default function GenerarValorModelo() {
   }
 
   const lastPrediction = predictMutation.data;
-  const recentHistory = historyQuery.data?.predictions ?? [];
+  const targetKeys = model.targets;
 
   return (
     <div className="w-full px-[36px] sm:px-[44px] lg:px-[52px] xl:px-[60px] 2xl:px-[320px] py-10">
@@ -235,7 +314,7 @@ export default function GenerarValorModelo() {
       <div className="mb-8">
         <h1 className="text-2xl font-serif font-semibold">Generar valor</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Modelo {model.model_id.slice(0, 8)} · {model.crop} · {model.algorithm}. Carga al menos {model.window_size} días completos para cubrir la ventana temporal.
+          Modelo {model.model_id.slice(0, 8)} · {model.treatment} · {model.algorithm}. Carga al menos {model.window_size} días completos para cubrir la ventana temporal.
         </p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {model.targets.map((t) => <span key={t} className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 font-semibold text-primary">{t}</span>)}
@@ -244,6 +323,8 @@ export default function GenerarValorModelo() {
       </div>
 
       <div className="space-y-8">
+        <SensorLocationMap punto={punto} />
+
         <section className="config-block">
           <div className="mb-5 flex items-start gap-3">
             <div className="rounded-lg bg-primary/10 p-2 text-olive"><TreeDeciduous className="h-5 w-5" /></div>
@@ -319,7 +400,7 @@ export default function GenerarValorModelo() {
               Extraer telemetría
             </Button>
             {selectedTelemetry.length === 0 && <StatusTag tone="neutral">El modelo no usa telemetría</StatusTag>}
-            {extractedTelemetry && <StatusTag tone="success">{extractedTelemetry.points.length} fechas extraídas</StatusTag>}
+            {extractedTelemetry && <StatusTag tone="success">{`${extractedTelemetry.points.length} fechas extraídas`}</StatusTag>}
           </div>
           {extractedTelemetryErrors.length > 0 && (
             <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
@@ -346,14 +427,25 @@ export default function GenerarValorModelo() {
           </div>
           {fusionResult && (
             <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4 text-sm">
-              <p><strong>{fusionResult.rowCount}</strong> filas fusionadas. Rango: {getDateRangeFromRows(fusionResult.rows)?.join(" — ") ?? "—"}.</p>
+              <p>
+                <strong>{fusionResult.rowCount}</strong> filas fusionadas. Rango: {getDateRangeFromRows(fusionResult.rows)?.join(" — ") ?? "—"}.
+                {predictedForDate && (
+                  <span className="ml-2 text-muted-foreground">→ predicción para <strong>{fmtDate(predictedForDate)}</strong></span>
+                )}
+              </p>
               {fusionResult.rowCount < model.window_size && <p className="mt-1 text-destructive">Se necesitan al menos {model.window_size} filas completas.</p>}
+              {duplicateExists && predictedForDate && (
+                <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 p-3 text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>Ya existe una predicción para el {fmtDate(predictedForDate)}. Para generar un nuevo valor avanza los datos hasta una fecha posterior.</p>
+                </div>
+              )}
               {fusionResult.warnings.length > 0 && <ul className="mt-2 list-disc pl-5 text-satellite-amber">{fusionResult.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
             </div>
           )}
           {lastPrediction && (
             <div className="mt-5 rounded-xl border border-sensor-green/25 bg-sensor-green/10 p-5">
-              <div className="mb-4 flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Valor generado</p></div>
+              <div className="mb-4 flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Valor generado para el {fmtDate(lastPrediction.predicted_for_date)}</p></div>
               <p className="mb-3 text-sm text-muted-foreground">Generado el {fmt(lastPrediction.generated_at)} con {lastPrediction.input_row_count} filas de entrada.</p>
               <div className="grid gap-3 sm:grid-cols-3">
                 {Object.entries(lastPrediction.predictions).map(([target, value]) => (
@@ -363,6 +455,11 @@ export default function GenerarValorModelo() {
                   </div>
                 ))}
               </div>
+              {lastPrediction.warnings.length > 0 && (
+                <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-satellite-amber">
+                  {lastPrediction.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )}
             </div>
           )}
         </section>
@@ -370,19 +467,60 @@ export default function GenerarValorModelo() {
         <section className="config-block">
           <div className="mb-4 flex items-center gap-2">
             <History className="h-5 w-5 text-olive" />
-            <h2 className="text-lg font-semibold">Historial reciente</h2>
+            <h2 className="text-lg font-semibold">Trazabilidad de predicciones</h2>
           </div>
-          {historyQuery.isLoading ? <p className="text-sm text-muted-foreground">Cargando historial…</p> : recentHistory.length === 0 ? (
+
+          {historyQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Cargando historial…</p>
+          ) : recentHistory.length === 0 ? (
             <p className="text-sm text-muted-foreground">Aún no hay predicciones guardadas para este modelo.</p>
           ) : (
-            <div className="space-y-2">
-              {recentHistory.slice(0, 5).map((p) => (
-                <div key={p.prediction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/70 p-3 text-sm">
-                  <span className="text-muted-foreground">{fmt(p.generated_at)}</span>
-                  <span className="font-medium">{Object.entries(p.predictions).map(([t, v]) => `${t}: ${Number(v).toFixed(4)}`).join(" · ")}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="mb-6 h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={fmtDate}
+                      tick={{ fontSize: 11 }}
+                      stroke="var(--muted-foreground)"
+                    />
+                    <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={60} />
+                    <Tooltip
+                      labelFormatter={(label) => `Fecha: ${fmtDate(String(label))}`}
+                      formatter={(value, name) => [Number(value).toFixed(4), name]}
+                      contentStyle={{ fontSize: 12 }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    {targetKeys.map((target, i) => (
+                      <Line
+                        key={target}
+                        type="monotone"
+                        dataKey={target}
+                        stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2">
+                {recentHistory.map((p) => (
+                  <div key={p.prediction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/70 p-3 text-sm">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">{fmtDate(p.predicted_for_date)}</span>
+                      <span className="text-xs text-muted-foreground">Generado el {fmt(p.generated_at)}</span>
+                    </div>
+                    <span className="text-muted-foreground">{Object.entries(p.predictions).map(([t, v]) => `${t}: ${Number(v).toFixed(4)}`).join(" · ")}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
       </div>

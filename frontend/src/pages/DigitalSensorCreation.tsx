@@ -156,7 +156,7 @@ export default function DigitalSensorCreation() {
           punto: importedGeo.punto ?? null,
           cloudThreshold: importedGeo.cloudThreshold ?? 20,
         });
-        setUnlockedStepIndex(importedGeo.provinciaId && importedGeo.municipioId ? 3 : 0);
+        setUnlockedStepIndex(importedGeo.provinciaId && importedGeo.municipioId ? 1 : 0);
         setServerErrors([]);
         setErrorStep(null);
         toast.success("Configuración importada", { description: `${importedFeatures.length} features restauradas.` });
@@ -198,7 +198,7 @@ export default function DigitalSensorCreation() {
       punto: g.punto ?? null,
       cloudThreshold: (g.cloudThreshold as number) ?? 20,
     });
-    setUnlockedStepIndex(g.provinciaId && g.municipioId ? 3 : 0);
+    setUnlockedStepIndex(g.provinciaId && g.municipioId ? 1 : 0);
     setServerErrors([]);
     setErrorStep(null);
     setShowLoadPanel(false);
@@ -248,6 +248,26 @@ export default function DigitalSensorCreation() {
                         <p className="text-xs text-muted-foreground">
                           {new Date(cfg.updated_at).toLocaleString("es-ES")}
                         </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              cfg.uvl_version_active
+                                ? "bg-sensor-green/10 text-sensor-green"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                            title={cfg.uvl_version_active ? "Versión UVL activa" : "Versión UVL no activa"}
+                          >
+                            {cfg.uvl_version_name ?? "Sin versión"}
+                          </span>
+                          {cfg.is_obsolete && (
+                            <span
+                              className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+                              title={cfg.obsolete_reason || "Configuración obsoleta"}
+                            >
+                              Obsoleta
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <Button
@@ -328,16 +348,16 @@ export default function DigitalSensorCreation() {
           </div>
 
           {unlockedStepIndex < 1 && (
-            <StepLockedHint text="Selecciona cultivo, tipo de suelo, provincia y municipio y pulsa Listo para desbloquear los sensores físicos." />
+            <StepLockedHint text="Selecciona tratamiento, tipo de suelo, provincia y municipio y pulsa Listo para desbloquear los sensores físicos." />
           )}
 
           {/* Paso 2: Sensores */}
           {unlockedStepIndex >= 1 && (
             <div ref={sensorsRef}>
               <StepSensores
-                serverErrors={[]}
-                isPending={false}
-                onComplete={() => setUnlockedStepIndex(2)}
+                serverErrors={stepServerErrors("1")}
+                isPending={validateMutation.isPending}
+                onComplete={() => void handleCompleteStep(1)}
               />
             </div>
           )}

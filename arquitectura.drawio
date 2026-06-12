@@ -1,4 +1,4 @@
-<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+﻿<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
   <root>
     <mxCell id="0" />
     <mxCell id="1" parent="0" />
@@ -116,7 +116,7 @@
     </mxCell>
 
     <!-- modelos <<use>> UVL -->
-    <mxCell id="e-mod-uvl" value="«use»&#xa;crop_profile / thresholds"
+    <mxCell id="e-mod-uvl" value="«use»&#xa;treatment_profile / thresholds"
       style="dashed=1;endArrow=open;endFill=0;edgeStyle=orthogonalEdgeStyle;fontSize=10;"
       edge="1" source="be-mod" target="uvl" parent="1">
       <mxGeometry relative="1" as="geometry" />
@@ -150,3 +150,4 @@
 
   </root>
 </mxGraphModel>
+

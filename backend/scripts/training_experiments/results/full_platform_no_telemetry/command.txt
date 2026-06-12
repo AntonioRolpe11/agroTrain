@@ -1,0 +1,7 @@
+﻿backend\.venv\Scripts\python.exe -u -m backend.scripts.training_experiments.run_experiments --include-optional-boosters --skip-lstm --station Control_59_3-3_O --station RDC_62_6-3_O --station Secano_53_3-2_O --output-dir backend/scripts/training_experiments/results/full_platform_no_telemetry
+
+# Report command
+backend\.venv\Scripts\python.exe -m backend.scripts.training_experiments.select_winners --results backend/scripts/training_experiments/results/full_platform_no_telemetry/results.csv --output-dir backend/scripts/training_experiments/results/full_platform_no_telemetry
+
+# Package freeze command
+backend\.venv\Scripts\python.exe -m pip freeze > backend/scripts/training_experiments/results/full_platform_no_telemetry/pip-freeze.txt

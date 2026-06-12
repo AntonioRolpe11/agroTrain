@@ -5,7 +5,7 @@ export interface SensorFileInput {
   dataset: GenericCsvDataset;
   timestampCol: string;
   dataCol: string;
-  aggregation?: "avg" | "min" | "max";
+  aggregation?: "avg" | "min" | "max" | "sum";
   /** Pre-computed daily values. When present, bypasses raw row aggregation. */
   precomputedDaily?: Map<string, number>;
 }
@@ -43,7 +43,7 @@ function resampleToDaily(
   rows: CsvPreviewRow[],
   timestampCol: string,
   dataCol: string,
-  aggregation: "avg" | "min" | "max" = "avg",
+  aggregation: "avg" | "min" | "max" | "sum" = "avg",
 ): Map<string, number> {
   const buckets = new Map<string, number[]>();
 
@@ -61,6 +61,7 @@ function resampleToDaily(
     let agg: number;
     if (aggregation === "min") agg = Math.min(...values);
     else if (aggregation === "max") agg = Math.max(...values);
+    else if (aggregation === "sum") agg = values.reduce((a, b) => a + b, 0);
     else agg = values.reduce((a, b) => a + b, 0) / values.length;
     result.set(date, agg);
   }

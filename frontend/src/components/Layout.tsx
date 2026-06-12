@@ -1,4 +1,4 @@
-import { Leaf, LogOut, Menu, Users, X } from "lucide-react";
+import { FileCode, Leaf, LogOut, Menu, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { path: "/creacion-sensor-digital", label: "Creación sensor digital" },
   { path: "/validacion-modelo", label: "Validación del modelo" },
   { path: "/mis-modelos", label: "Mis modelos" },
-  { path: "/arquitectura", label: "Arquitectura" },
 ];
 
 export default function Layout() {
@@ -63,6 +62,19 @@ export default function Layout() {
                 Usuarios
               </Link>
             )}
+            {isAdmin && (
+              <Link
+                to="/uvl-editor"
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
+                  pathname === "/uvl-editor"
+                    ? "bg-primary/10 text-olive"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                Editor UVL
+              </Link>
+            )}
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
@@ -111,6 +123,15 @@ export default function Layout() {
                 <Users className="w-4 h-4" /> Usuarios
               </Link>
             )}
+            {isAdmin && (
+              <Link
+                to="/uvl-editor"
+                onClick={() => setMobileOpen(false)}
+                className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground flex items-center gap-2"
+              >
+                <FileCode className="w-4 h-4" /> Editor UVL
+              </Link>
+            )}
             <button
               onClick={() => { setMobileOpen(false); handleLogout(); }}
               className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground flex items-center gap-2 text-left"
@@ -127,7 +148,7 @@ export default function Layout() {
 
       <footer className="border-t border-border bg-card">
         <div className="w-full px-[36px] py-6 text-center text-xs text-muted-foreground sm:px-[44px] lg:px-[52px] xl:px-[60px] 2xl:px-[68px]">
-          TFG · Configurador de sensores virtuales basado en UVL/Flamapy
+          Configurador de sensores virtuales basado en UVL/Flamapy
         </div>
       </footer>
     </div>

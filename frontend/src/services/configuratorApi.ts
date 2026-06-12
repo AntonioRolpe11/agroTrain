@@ -1,11 +1,9 @@
-import type { ConfigState } from "@/types/config";
 import type {
   ConfigurationsNumberResponse,
   DeadFeaturesResponse,
   FeatureModelNode,
   MunicipioOption,
   MunicipioViewportResponse,
-  PartialValidationRequest,
   ProvinciaOption,
   SatisfiableResponse,
   TelemetryExtractRequest,
@@ -18,14 +16,6 @@ import type { Configuracion } from "@/types/api";
 import { authFetch, authFetchJson, authPostJson } from "./api";
 
 export const configuratorApi = {
-  async validateConfig(config: ConfigState): Promise<ValidateResponse> {
-    return authPostJson<ValidateResponse>("/api/v1/configurator/validate", config);
-  },
-
-  async validatePartialConfig(payload: PartialValidationRequest): Promise<ValidateResponse> {
-    return authPostJson<ValidateResponse>("/api/v1/configurator/validate-partial", payload);
-  },
-
   async getProvincias(): Promise<ProvinciaOption[]> {
     return authFetchJson<ProvinciaOption[]>("/api/v1/geo/provincias");
   },

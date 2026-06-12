@@ -111,22 +111,26 @@ export interface TargetMetrics {
   r2: number;
 }
 
+export interface ValSeries {
+  y_true: number[];
+  y_pred: number[];
+}
+
 export interface TrainingStatus {
   status: "training" | "completed" | "error";
   phase?: string | null;
   algorithm?: string | null;
-  current_epoch?: number | null;
-  total_epochs?: number | null;
   current_target?: string | null;
-  val_loss?: number | null;
   n_train?: number | null;
   n_val?: number | null;
+  is_validation?: boolean;
   metrics?: Record<string, TargetMetrics>;
+  val_series?: Record<string, ValSeries>;
   warnings?: string[];
   detail?: string | null;
   // campos adicionales cuando status === "completed" (vienen del metadata)
   model_id?: string;
-  crop?: string;
+  treatment?: string;
   targets?: string[];
   n_samples?: number;
 }
@@ -151,6 +155,8 @@ export interface Configuracion {
   features: string[];
   geo: Record<string, unknown>;
   uvl_version: number | null;
+  uvl_version_name: string | null;
+  uvl_version_active: boolean;
   is_obsolete: boolean;
   obsolete_reason: string;
   created_at: string;
@@ -205,9 +211,12 @@ export interface AuthUser {
 export interface ModelMetadata {
   model_id: string;
   algorithm: string;
-  crop: string;
+  treatment: string;
   features?: string[];
   geo?: Record<string, unknown> & {
+    nombre?: string;
+    provinciaNombre?: string | null;
+    municipioNombre?: string | null;
     punto?: { lat: number; lng: number } | null;
     cloudThreshold?: number;
   };
@@ -218,6 +227,7 @@ export interface ModelMetadata {
   n_samples: number;
   n_train: number;
   n_val: number;
+  is_validation?: boolean;
   metrics: Record<string, TargetMetrics>;
   warnings: string[];
   imported?: boolean;

@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           "vendor-react": ["react", "react-dom", "react-router-dom"],
           "vendor-map": ["leaflet", "react-leaflet"],
-          "vendor-ui": ["@radix-ui/react-checkbox", "@radix-ui/react-label", "@radix-ui/react-tooltip", "sonner"],
+          "vendor-ui": ["@radix-ui/react-label", "@radix-ui/react-tooltip", "sonner"],
           "vendor-query": ["@tanstack/react-query"],
         },
       },

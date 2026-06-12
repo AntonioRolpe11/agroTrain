@@ -14,7 +14,7 @@ class ModeloGuardado(models.Model):
         related_name="modelos",
     )
     algorithm = models.CharField(max_length=50)
-    crop = models.CharField(max_length=100)
+    treatment = models.CharField(max_length=100)
     features = models.JSONField(default=list)
     geo = models.JSONField(default=dict)
     targets = models.JSONField()
@@ -33,7 +33,7 @@ class ModeloGuardado(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.model_id[:8]} {self.algorithm}/{self.crop}"
+        return f"{self.model_id[:8]} {self.algorithm}/{self.treatment}"
 
 
 class PrediccionModelo(models.Model):
@@ -56,7 +56,8 @@ class PrediccionModelo(models.Model):
     warnings = models.JSONField(default=list)
 
     class Meta:
-        ordering = ["-generated_at"]
+        ordering = ["-predicted_for_date", "-generated_at"]
+        unique_together = [("model", "predicted_for_date")]
 
     def __str__(self) -> str:
         return f"{self.model.model_id[:8]} @ {self.generated_at:%Y-%m-%d %H:%M}"

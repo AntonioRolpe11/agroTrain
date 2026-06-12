@@ -16,8 +16,8 @@ export const modelosQueryKeys = {
 // Lanza entrenamiento; devuelve { model_id } inmediatamente (202)
 export function useTrainModelMutation() {
   return useMutation({
-    mutationFn: ({ features, csvBlob, geo }: { features: string[]; csvBlob: Blob; geo?: unknown }) =>
-      modelosApi.train(features, csvBlob, geo),
+    mutationFn: ({ features, csvBlob, geo, isValidation }: { features: string[]; csvBlob: Blob; geo?: unknown; isValidation?: boolean }) =>
+      modelosApi.train(features, csvBlob, geo, isValidation),
     retry: 0,
   });
 }

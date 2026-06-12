@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.geo",
     "apps.telemetria",
     "apps.modelos",
+    "apps.common",
 ]
 
 AUTH_USER_MODEL = "accounts.CustomUser"

@@ -34,6 +34,7 @@ class TelemetryService:
     CLOUD_BIT_MASK = 1 << 10
     CIRRUS_BIT_MASK = 1 << 11
     REDUCE_SCALE = 10  # resolución espacial Sentinel-2 10m (B2, B3, B4, B8)
+    MAX_DATE_RANGE_DAYS = 730
 
     def __init__(self) -> None:
         self._initialized = False
@@ -43,8 +44,12 @@ class TelemetryService:
             raise TelemetryServiceError("Debes seleccionar al menos un índice de telemetría.")
         if request.lat is None or request.lng is None:
             raise TelemetryServiceError("La configuración no incluye la ubicación del árbol.")
-        if request.start_date > request.end_date:
-            raise TelemetryServiceError("La fecha inicial no puede ser posterior a la fecha final.")
+        if request.start_date >= request.end_date:
+            raise TelemetryServiceError("La fecha inicial debe ser anterior a la fecha final.")
+        if (request.end_date - request.start_date).days > self.MAX_DATE_RANGE_DAYS:
+            raise TelemetryServiceError(
+                f"El rango de fechas no puede superar {self.MAX_DATE_RANGE_DAYS} días."
+            )
 
         self._initialize_ee()
 
@@ -196,6 +201,8 @@ class TelemetryService:
                 enriched = enriched.addBands(savi)
             elif index_name == "NDWI":
                 enriched = enriched.addBands(image.normalizedDifference(["B3", "B8"]).rename("NDWI"))
+            else:
+                raise TelemetryServiceError(f"Índice '{index_name}' no tiene fórmula implementada.")
         return enriched
 
     @staticmethod

@@ -4,12 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in agriculture. The UVL feature model (`agroTrain.uvl`) is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
+**agroTrain2** is a full-stack application implementing a **Software Product Line (SPL)** for configuring virtual digital sensors in olive agriculture. The active UVL feature model is the **single source of truth**: it defines the valid configuration space, drives the wizard UI, validates configurations, maps features to CSV columns, and parameterises ML model training. No domain-specific knowledge is hardcoded in Python or TypeScript — everything is derived at runtime from the UVL tree.
 
-Users configure a parcel (crop, soil type, location, geometry) and select sensor parameters via a step-by-step wizard. The system then:
+UVL versions are stored in `backend/uvl_versions/` and tracked in the DB (`UVLVersion` model). The active version is determined by `UVLVersion.objects.filter(is_active=True).first()`. `backend/agroTrain.uvl` is only used as a fallback seed when no DB versions exist yet (`seed_initial_version` in `uvl_version_service.py`). **Edit UVL files in `backend/uvl_versions/`, not `backend/agroTrain.uvl`.**
+
+When a version is activated via `UvlEditor.tsx`, the frontend invalidates both `["uvl-versions"]` and `["feature-model"]` React Query caches, so the configurator wizard reflects the new UVL immediately without a page reload.
+
+Users configure an olive parcel (irrigation treatment, soil type, location, geometry) and select sensor parameters via a step-by-step wizard. The system then:
 1. Validates the configuration against the UVL using Flamapy (BDD satisfiability).
 2. Optionally extracts vegetation indices (NDVI, EVI, SAVI, NDWI) from Sentinel-2 via Google Earth Engine.
-3. Accepts sensor CSV files, fuses them with telemetry, and trains ML models (LSTM / GradientBoosting) to predict target variables.
+3. Accepts sensor CSV files, fuses them with telemetry, and trains per-target sklearn models (PLSRegression / ElasticNet / SVR / GradientBoosting / RandomForest) to predict target variables.
 
 The UI is a React + TypeScript wizard with JWT authentication. The backend is Django REST Framework with five apps: `accounts`, `configurador`, `geo`, `telemetria`, `modelos`.
 
@@ -55,7 +59,7 @@ docker compose down -v      # destroy including DB volume
 
 ---
 
-## The UVL Feature Model (`agroTrain.uvl`)
+## The UVL Feature Model (`backend/uvl_versions/`)
 
 The UVL file is the core of the system. Every feature node can carry custom attributes:
 
@@ -65,18 +69,26 @@ The UVL file is the core of the system. Every feature node can carry custom attr
 | `wizard_step` | Backend + frontend scope derivation | Which wizard step owns this subtree (`parcel`, `sensors`, `telemetry`, `objective`) |
 | `csv_col` | Backend training, frontend CSV validation | Single CSV column name this feature maps to |
 | `csv_cols` | Backend training, frontend CSV validation | Comma-separated CSV column names (e.g. `'tmax,tmin'`) |
-| `window_size` | Backend LSTM/GB training | Lag window in days for this crop |
-| `preferred_algorithm` | Backend training | `'LSTM'` or `'GradientBoosting'` |
-| `min_samples` | Backend training | Minimum CSV rows to use LSTM; falls back to GradientBoosting below this |
+| `window_size` | Backend training | Treatment-level default lag window in days (fallback when no per-target `window_<target>`) |
+| `preferred_algorithm` | Backend training | Treatment-level default algorithm (fallback when no per-target `pref_alg_<target>`) |
+| `pref_alg_<target>` | Backend training | Per-target algorithm (`PLSRegression`/`ElasticNet`/`SVR`/`GradientBoosting`/`RandomForest`) |
+| `window_<target>` | Backend training | Per-target lag window in days |
+| `feat_variant_<target>` | Backend training | Per-target feature variant (`basic`/`ema`/`soil_profile`/`stress_indices`/`target_only`/`full`) |
+| `hyperprofile_<target>` | Backend training | Per-target hyperprofile key in `hyperprofile_registry.py` |
 | `min_reject` | Frontend Results.tsx | Row count below which training is blocked |
 | `min_warn` | Frontend Results.tsx | Row count below which a warning is shown |
 | `min_good` | Frontend Results.tsx | Row count for "good quality" indicator |
 | `quality_min` | Backend training_service | Minimum acceptable R² for this objective variable |
 | `quality_good` | Backend training_service | Good R² threshold for this objective variable |
+| `fill_strategy` | Backend `_interpolate_sensor_gaps` (`'zero'`) | Event/cumulative sensors (riego, lluvia): a day without a record means 0, not a gap to interpolate. Without it, the column is linearly interpolated (humedad_* limit 5, else limit 3) |
 
-### Adding a new crop
+### Adding a new irrigation treatment
 
-Add a child under `Cultivo` with all crop attributes, and add the appropriate humidity-depth constraint. No Python or TypeScript changes required.
+Add a child under `Tratamiento` with all treatment attributes, and add the appropriate constraints:
+- Humidity-depth: `NuevoTratamiento => Hd35 | Hd45 | Hd55` (or whichever depths are relevant)
+- Treatment-specific mandatory sensors (pattern established in v2): `NuevoTratamiento => SensorObligatorio`
+
+Example pattern: `RiegoControl => Pluviometro`, `RiegoDeficitario => DPV`, `RiegoDeficitarioSevero => DPV`. These constraints span wizard steps (parcel → sensors); the BDD enforces them at the sensors step because the parcel step is accumulated in scope. No Python or TypeScript changes required.
 
 ### Adding a new sensor
 
@@ -85,6 +97,8 @@ Add a child node under `ParametrosEntrada` with `csv_col`. If it needs special c
 ### Adding a new objective variable
 
 Add a child under `VariableObjetivo`. The feature name **must equal the CSV column name** in the fused training CSV (this is the convention the training service relies on). Add `quality_min` and `quality_good` attributes, and a constraint requiring the corresponding sensor (`NuevoObjetivo => SuSensor`).
+
+**Hyperprofile `required_inputs` must be mirrored as UVL constraints.** A hyperprofile (`hyperprofile_registry.py`) can declare `required_inputs` (CSV columns the training pipeline needs, e.g. `secano_mcd_pls_v1` requires `tmax,tmin,dpv`). The configurator does not read hyperprofiles, so without a constraint the wizard lets the user proceed without those sensors and training then fails. Add a constraint mapping the objective (or treatment) to the sensor features whose `csv_col(s)` cover those inputs — e.g. `MCD => (TemperaturaAire & DPV)` since `TemperaturaAire` maps to `tmax,tmin` and `DPV` to `dpv`.
 
 ### Adding a new telemetry index
 
@@ -114,7 +128,7 @@ The component reads `attributes.label` for display names. Selection state lives 
 
 | Step | Component | Scope | Unlocks after |
 |---|---|---|---|
-| 0 — Parcela | `ParcelDataCard` | `DatosParcela` subtree | Crop + soil + province + municipality |
+| 0 — Parcela | `ParcelDataCard` | `DatosParcela` subtree | Treatment + soil + province + municipality |
 | 1 — Sensores | `StepSensores` | `ParametrosEntrada` subtree | Server validation pass |
 | 2 — Telemetría | `StepTelemetria` | `DatosTelemetria` subtree | Server validation pass |
 | 3 — Objetivo | `StepObjetivo` | `VariableObjetivo` subtree | Server validation + generate |
@@ -172,75 +186,59 @@ At startup, traverses the UVL tree looking for `wizard_step` attributes. When fo
 
 ```python
 target_names = FlamapyService.get_subtree_feature_names("VariableObjetivo")
-crop_names   = FlamapyService.get_subtree_feature_names("Cultivo")
+treatment_names = FlamapyService.get_subtree_feature_names("Tratamiento")
 
 targets    = [f for f in features if f in target_names]
 # Convention: target feature name == CSV column name (e.g. TasaBuenos → column 'TasaBuenos')
 
 input_cols = []
 for feature in features:
-    if feature not in targets and feature not in crops:
+    if feature not in targets and feature not in treatment_names:
         input_cols += FlamapyService.get_csv_columns(feature)
 # get_csv_columns reads csv_col / csv_cols UVL attributes
 
-crop = first feature in features that is in crop_names
+treatment = first feature in features that is in treatment_names
 ```
 
-### 2. Algorithm selection (from UVL crop attributes)
+### 2. Per-target training profile (from UVL attributes)
 
-`FlamapyService.get_crop_profile(crop_name)` reads `window_size`, `preferred_algorithm`, `min_samples` from the UVL crop feature node's attributes. No `crop_profiles.py` file exists — it was deleted in the SPL refactor.
+`FlamapyService.get_treatment_target_profile(treatment_name, target_name)` reads the per-target attributes `pref_alg_<target>`, `window_<target>`, `feat_variant_<target>`, `hyperprofile_<target>` from the UVL treatment feature node. When a per-target attribute is absent it falls back to the treatment-level defaults (`window_size`, `preferred_algorithm` via `get_treatment_profile`). No hardcoded profile file exists — everything comes from UVL attributes plus the hyperparameter registry.
 
 ### 3. Quality thresholds (from UVL objective attributes)
 
 `FlamapyService.get_quality_thresholds(target_name)` reads `quality_min` and `quality_good` from the UVL objective feature node. If attributes are absent, no quality warning is generated (graceful degradation).
 
-### 4. Algorithm selection logic
+### 4. Algorithm + hyperparameters
 
-Fallback chain in `training_service.py`:
+Every target trains its own sklearn estimator (`_train_per_target`). The algorithm comes from `pref_alg_<target>` and the hyperparameters from the hyperprofile named in `hyperprofile_<target>` (looked up in `hyperprofile_registry.py`). Supported algorithms (`_build_estimator`):
 
-```
-preferred = UVL crop attribute preferred_algorithm
-if preferred == "LSTM":
-    if TensorFlow not installed  →  GradientBoosting + warning
-    elif n_joint < min_samples   →  GradientBoosting + warning
-    else                         →  LSTM
-else                             →  GradientBoosting
-```
+- `PLSRegression`, `ElasticNet`, `SVR` (sklearn linear / kernel)
+- `GradientBoosting` (`HistGradientBoostingRegressor`)
+- `RandomForest` (`RandomForestRegressor`)
 
-`n_joint` = complete rows where ALL of `targets + input_features` are non-null. Default fallbacks when UVL attributes absent: `window_size=5`, `preferred_algorithm='GradientBoosting'`, `min_samples=80`.
+A hyperprofile declares `algorithm`, `feature_variant`, `params`, `required_inputs`, `optional_inputs`, and optional `max_samples` (train-set subsample cap, used by SVR). A `required_inputs` column missing from the CSV raises; `optional_inputs` missing only warns. Defaults when UVL attributes are absent: `window_size=5`, `preferred_algorithm='RandomForest'`.
 
-### 5. Training algorithms
+The active UVL (`v2_olivos_tratamientos.uvl`) wires 7 hyperprofiles across MCD / TasaBuenos / TasaSeveros × treatments; the per-target algorithm / window / variant choices are empirically derived (`docs/experimentacion_modelos.md`, `docs/experimentacion_olivos_v2.md`).
 
-**LSTM** (TensorFlow):
-- Drops rows with any missing value in `all_cols`
-- 80/20 train/val split
-- Autoregressive: X windows cover `all_cols` (targets serve as lag inputs too), Y = current target value
-- Separate scalers: `scaler_X` for feature windows, `scaler_Y[target]` for each target — both fitted on train partition only
-- Architecture per target: 128-unit LSTM → Dropout(0.2) → Dense(64, relu) → Dense(1)
-- Optimizer: Adam(lr=0.001), Loss: Huber, 200 epochs max, EarlyStopping(patience=30, min_delta=1e-4)
-- Progress updates pushed to `_registry` via `_ProgressCallback` for frontend polling
+### 5. Training (`_train_per_target`)
 
-**GradientBoosting** (`HistGradientBoostingRegressor`, params: `max_depth=5, learning_rate=0.05, max_iter=300, early_stopping=True`):
-- Temporal features added via `_add_temporal_features`:
-  - Day-of-year: `sin(2π·DOY/365)` and `cos(2π·DOY/365)`
-  - Lag features: `{feat}_lag1` … `{feat}_lag{window_size}` for every column
-  - Rolling mean: `{feat}_roll7d` (7-day, capped at `window_size`)
-- Features added before 80/20 split; per-target `scaler_{target}.pkl` fitted on train only
-- One model per target
+One model per target:
+- Builds the lag-source set (`[target]` for `feature_variant 'target_only'`, else `targets + input_features`), interpolates sensor gaps (`_interpolate_sensor_gaps`, respecting `fill_strategy 'zero'`), then applies feature engineering — `add_features` for the named variant, else `_add_temporal_features`.
+- Feature variants (`feature_engineering.py`): `basic`, `ema`, `soil_profile`, `stress_indices`, `target_only`, `full`. All engineered features are `shift(1)`-based (no same-day leakage).
+- 80/20 chronological split; per-target `MinMaxScaler` fitted on train only; optional `max_samples` subsampling of the train partition.
+- Estimator from `_build_estimator(algorithm, params)`; metrics (`mae`, `rmse`, `r2`) computed on val and compared to `quality_min` / `quality_good`.
 
-**RandomForest** (`RandomForestRegressor`, params: `n_estimators=300, max_features='sqrt', min_samples_split=4, min_samples_leaf=2`): code path exists but no UVL crop currently uses it.
+Dendrometer MCD spikes are corrected with `_despike_isolated` (`DESPIKE_COLUMNS`) before any feature, in both training and inference.
 
 ### 6. Storage structure
 
 Files saved under `backend/model_storage/{model_id}/`:
 
-| File | Algorithm | Purpose |
-|---|---|---|
-| `metadata.json` | Both | targets, input_features, features, geo, window_size, algorithm, metrics, warnings, n_samples, n_train, n_val, feature_columns_by_target, created_at |
-| `lstm_{target}.keras` | LSTM | TF saved model per target |
-| `scaler_X.pkl` | LSTM | MinMaxScaler for all feature windows |
-| `scaler_{target}.pkl` | Both | MinMaxScaler for target output |
-| `model_{target}.pkl` | Sklearn | HistGB/RF model per target |
+| File | Purpose |
+|---|---|
+| `metadata.json` | targets, input_features, features, geo, window_size, algorithm, target_profiles, metrics, warnings, n_samples, n_train, n_val, feature_columns_by_target |
+| `model_{target}.pkl` | sklearn model per target |
+| `scaler_{target}.pkl` | MinMaxScaler per target |
 
 DB models: `ModeloGuardado` (full metadata + user FK) and `PrediccionModelo` (FK to model, per-inference predictions JSON + warnings).
 
@@ -264,15 +262,12 @@ Validation guards: model must have `geo.punto` saved (required to know location 
 
 ### 2. Backend inference logic (`prediction_service.py`)
 
-**LSTM** (`_predict_lstm`):
-1. Load `lstm_{target}.keras` and scalers from disk
-2. Take last `window_size` rows of all columns, scale with `scaler_X`
-3. Reshape to `(1, window_size, n_features)` → `model.predict()` → inverse-scale with `scaler_Y[target]`
+Per-target models route through `_predict_per_target` (uses each target's `feature_variant` from `metadata.target_profiles`); models without `target_profiles` in metadata use the legacy `_predict_sklearn` path.
 
-**Sklearn** (`_predict_sklearn`):
+**Per-target / Sklearn** (`_predict_per_target` / `_predict_sklearn`):
 1. Load `model_{target}.pkl` and `scaler_{target}.pkl`
 2. Reconstruct feature set per target using `feature_columns_by_target` from metadata
-3. Add temporal features (same `_add_temporal_features` as training) on a synthetic "future row" built from last observed values
+3. Apply the same feature engineering as training (`add_features` for the variant, else `_add_temporal_features`) on a synthetic "future row" built from last observed values
 4. `model.predict(X_scaled)` → inverse-scale
 
 **One-step-ahead only**: no recursive prediction. Environmental inputs use last observed value; target lags come from real historical window via `shift()`. Avoids error accumulation.
@@ -297,7 +292,7 @@ Prerequisites: model must have `geo.punto` (validated on page load).
 
 - **`buildCsvColumnInfo(model, "DatosTelemetria")`** → aliases + dataColumns for telemetry CSV parsing. NDVI/EVI/SAVI/NDWI derived automatically; adding a new index to UVL picks it up with no code change.
 - **`collectCsvFeatures(model, features, HARDCODED_SENSOR_IDS)`** → list of `{featureName, csvCol, label}` for all active sensors in `ParametrosEntrada` that aren't hardcoded (humedad depths, pluviómetro, future sensors). Renders a `SensorFileCard` upload for each automatically.
-- **`buildCropTrainingThresholds(model)`** → `min_reject / min_warn / min_good` per crop from UVL attributes. Controls the training data quality indicator.
+- **`buildTreatmentTrainingThresholds(model)`** → `min_reject / min_warn / min_good` per treatment from UVL attributes. Controls the training data quality indicator.
 - **`buildAccumulatedScope` / `buildLabelMap`** → used in step components for constraint hints.
 
 ### Hardcoded sensor handling (legitimately, by design)
@@ -316,6 +311,7 @@ Prerequisites: model must have `geo.punto` (validated on page load).
 |---|---|---|
 | `telemetry_service.py:183-199` | GEE band formulas per index | Sentinel-2 physics |
 | `dendroCalc.ts` | MCD / TasaBuenos / TasaSeveros calculation | Domain calculation logic |
+| `training_service.py` | `DESPIKE_COLUMNS = ("MCD",)` + `_despike_isolated` | Dendrometer sensor-error correction (isolated 1-day spikes); applied in training + inference |
 | `Results.tsx` | Dendrómetro + TemperaturaAire upload sections | Special aggregation logic |
 | `flamapy_service.py` | `PARTIAL_STEP_ORDER` tuple | UI ordering, not derivable from UVL alone |
 | `serializers.py` | `PARTIAL_STEP_CHOICES` | Validation of the same step order |
@@ -323,7 +319,7 @@ Prerequisites: model must have `geo.punto` (validated on page load).
 
 ### Everything else is UVL-driven
 
-Crop names, soil names, sensor names, objective variables, telemetry indices, CSV column mappings, algorithm parameters, quality thresholds, training data thresholds, constraint messages, wizard scope, constraint hints — all derived at runtime from `agroTrain.uvl`.
+Treatment names, soil names, sensor names, objective variables, telemetry indices, CSV column mappings, algorithm parameters, quality thresholds, training data thresholds, constraint messages, wizard scope, constraint hints — all derived at runtime from `agroTrain.uvl`.
 
 ---
 
@@ -347,7 +343,7 @@ apps/
   configurador/          # Flamapy BDD validation + feature model serialisation
   geo/                   # Province/municipality catalog (hardcoded) + Shapely geometry
   telemetria/            # GEE Sentinel-2 extraction
-  modelos/               # Async ML training (LSTM / GradientBoosting / RandomForest)
+  modelos/               # Async ML training (per-target sklearn: PLS / ElasticNet / SVR / GB / RF)
 ```
 
 **configurador / FlamapyService** — class with class-level BDD cache. Initialised at startup via `apps.py:ready()`. Key methods:
@@ -355,11 +351,12 @@ apps/
 - `validate_features(features, is_full, step)` — step-aware BDD validation
 - `get_subtree_feature_names(parent)` — all feature names under a node
 - `get_csv_columns(feature)` — csv_col/csv_cols for a feature
-- `get_crop_profile(crop)` — window_size, preferred_algorithm, min_samples from UVL
+- `get_treatment_profile(treatment)` — treatment-level defaults (window_size, preferred_algorithm) from UVL
 - `get_quality_thresholds(target)` — quality_min, quality_good from UVL
+- `get_treatment_target_profile(treatment, target)` — per-target profile (`pref_alg_<target>`, `window_<target>`, `feat_variant_<target>`, `hyperprofile_<target>`), falling back to treatment defaults
 - `to_dict()` — full feature tree serialised to JSON with constraints
 
-**modelos / training flow**: `start_training` spawns daemon thread → `_run_pipeline` → reads crop profile from UVL → loads CSV → selects algorithm (LSTM / GradientBoosting) → trains per-target model → saves via `StorageService`. Status polled via in-memory `_registry`. Models stored as UUID-named dirs under `backend/model_storage/` with `metadata.json` + `.pkl` / `.keras` artifacts.
+**modelos / training flow**: `start_training` spawns daemon thread → `_run_pipeline` → reads per-target profiles from UVL → loads CSV → `_train_per_target` trains one sklearn model per target (algorithm + hyperparameters from the UVL hyperprofile) → saves via `StorageService`. Status polled via in-memory `_registry`. Models stored as UUID-named dirs under `backend/model_storage/` with `metadata.json` + `.pkl` artifacts.
 
 **modelos / inference flow**: `prediction_service.py` loads artifacts from disk → reconstructs feature set from `metadata.json` → runs one-step-ahead inference → saves `PrediccionModelo` DB record → returns predictions dict.
 
@@ -381,8 +378,10 @@ pages/
   GenerarValorModelo.tsx          # Inference page: upload sensors → extract GEE → fuse → predict
   UserManagement.tsx              # Admin: user CRUD
   Architecture.tsx                # Feature model visualisation
+  UvlEditor.tsx                   # Admin: UVL version management (create/preview/activate/delete)
   NotFound.tsx                    # 404
 components/
+  Layout.tsx                      # App shell (navbar + outlet)
   RequireAuth.tsx                 # Protected route wrapper
   RequireAdmin.tsx                # Admin-only route wrapper
   feature-model/FeatureNode.tsx   # Recursive UVL tree renderer
@@ -408,9 +407,10 @@ services/
   api.ts                          # Base axios instance (JWT header injection)
   configuratorApi.ts              # Configurador endpoints
   modelosApi.ts                   # Modelos endpoints
+  uvlApi.ts                       # UVL versioning endpoints (list/create/validate/activate/delete)
 utils/
   featureModel.ts                 # buildLabelMap, buildAccumulatedScope, collectCsvFeatures,
-                                  # buildCsvColumnInfo, buildCropTrainingThresholds
+                                  # buildCsvColumnInfo, buildTreatmentTrainingThresholds
   constraintEvaluator.ts          # evalAST, getViolations, getIncomingRequirements,
                                   # formatConstraintAST, collectASTFeatures
 lib/
@@ -429,14 +429,27 @@ types/
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/auth/login/` | JWT login → access + refresh tokens |
-| POST | `/api/v1/auth/token/refresh/` | Refresh access token |
+| POST | `/api/v1/auth/login` | JWT login → access + refresh tokens |
+| POST | `/api/v1/auth/refresh` | Refresh access token |
+| GET | `/api/v1/auth/me` | Current user info |
 | GET/POST | `/api/v1/auth/users/` | List / create users (admin) |
 | GET/PUT/DELETE | `/api/v1/auth/users/<id>/` | User detail / edit / delete (admin) |
-| GET | `/api/v1/configurator/feature-model` | Full UVL tree as JSON |
+| GET | `/api/v1/configurator/model` | Full UVL tree as JSON |
 | POST | `/api/v1/configurator/validate-features` | Step-aware BDD validation |
-| GET | `/api/v1/geo/provinces` | Province list |
-| GET | `/api/v1/geo/municipalities/<id>` | Municipalities for province |
+| POST | `/api/v1/configurator/flamapy/satisfiable` | BDD satisfiability check (UvlEditor preview) |
+| POST | `/api/v1/configurator/flamapy/configurations-number` | Count valid configurations |
+| POST | `/api/v1/configurator/flamapy/dead-features` | List dead features |
+| GET/POST | `/api/v1/configurator/configuraciones/` | List / create saved configurations |
+| GET/DELETE | `/api/v1/configurator/configuraciones/<id>/` | Configuration detail / delete |
+| GET | `/api/v1/configurator/versions/` | List UVL versions (admin) |
+| POST | `/api/v1/configurator/versions/validate/` | Validate UVL text without saving |
+| POST | `/api/v1/configurator/versions/create/` | Create new UVL version |
+| GET/DELETE | `/api/v1/configurator/versions/<pk>/` | Version detail / delete |
+| GET | `/api/v1/configurator/versions/<pk>/preview-activation/` | Preview impact of activating version |
+| POST | `/api/v1/configurator/versions/<pk>/activate/` | Activate UVL version |
+| GET | `/api/v1/geo/provincias` | Province list |
+| GET | `/api/v1/geo/municipios` | Municipality list (filtered by province) |
+| GET | `/api/v1/geo/municipio-viewport` | Bounding box for a municipality |
 | POST | `/api/v1/telemetry/extract` | GEE Sentinel-2 extraction |
 | POST | `/api/v1/modelos/train` | Start async training (multipart: features JSON + csv_file) |
 | GET | `/api/v1/modelos/<id>/status` | Poll training status |
@@ -473,7 +486,24 @@ Dev: backend `http://localhost:8000`, frontend `http://localhost:8080`. Frontend
 pip install -r backend/requirements/development.txt
 ```
 
-Flamapy requires Python < 3.13 (PySAT does not support 3.13+). TensorFlow is optional — if absent, all crops fall back to GradientBoosting regardless of UVL `preferred_algorithm`.
+Flamapy requires Python < 3.13 (PySAT does not support 3.13+). The ML stack is sklearn-only (PLSRegression / ElasticNet / SVR / GradientBoosting / RandomForest) — no TensorFlow / XGBoost / LightGBM.
+
+---
+
+## Offline Training Experiments (`backend/scripts/training_experiments/`)
+
+Offline harness for hyperparameter search — runs outside Django, reads CSV files directly from `csvs/`. Used to empirically determine the per-target `pref_alg_<target>`, `window_<target>` and `hyperprofile_<target>`, whose results are encoded back into the UVL and `hyperprofile_registry.py`.
+
+```
+data_prep.py       # Load sensors per station, normalize, aggregate daily
+dendro_calc.py     # Python port of dendroCalc.ts (MCD/TasaBuenos/TasaSeveros)
+features.py        # Feature engineering variants (basic/long_lags/multi_roll/ema/full)
+run_experiments.py # Cross-station × target × variant runner (TimeSeriesSplit(5) + 15% holdout)
+select_winners.py  # Pick best per (station, target), emit winners.json + report.md
+results/           # Experiment outputs (gitignored)
+```
+
+Results documented in `docs/experimentacion_modelos.md`. This file is the source of truth for why each objective variable has its current `pref_alg_<target>`, `window_<target>` and `hyperprofile_<target>` in the UVL.
 
 ---
 

@@ -1,4 +1,4 @@
-# Generación de modelos predictivos y generación de valores en agroTrain2
+﻿# Generación de modelos predictivos y generación de valores en agroTrain2
 
 ## 1. Introducción
 
@@ -6,7 +6,7 @@ El módulo de modelos de **agroTrain2** constituye la parte predictiva del siste
 
 Desde el punto de vista de la memoria del TFG, este módulo es relevante porque integra tres ideas principales:
 
-1. **Configuración dirigida por una línea de producto software (SPL)**: las variables disponibles, sensores, cultivos, restricciones y parámetros de entrenamiento no se definen de forma aislada en el código, sino que se derivan del modelo de características UVL.
+1. **Configuración dirigida por una línea de producto software (SPL)**: las variables disponibles, sensores, Tratamientos, restricciones y parámetros de entrenamiento no se definen de forma aislada en el código, sino que se derivan del modelo de características UVL.
 2. **Entrenamiento automático de modelos de aprendizaje automático**: el sistema decide cómo construir el conjunto de entrenamiento y qué algoritmo aplicar en función de la configuración seleccionada y de la cantidad de datos disponible.
 3. **Reutilización operacional del modelo**: una vez entrenado, el modelo queda persistido, se muestra en la pantalla “Mis modelos” y puede utilizarse para generar valores futuros de la variable objetivo.
 
@@ -15,7 +15,7 @@ El flujo completo puede resumirse así:
 ```text
 Configuración UVL
       ↓
-Selección de cultivo, sensores, telemetría y variable objetivo
+Selección de Tratamiento, sensores, telemetría y variable objetivo
       ↓
 Carga y fusión de CSV de sensores + datos GEE
       ↓
@@ -38,7 +38,7 @@ agroTrain2 se apoya en un modelo de características UVL como fuente de verdad d
 
 En términos prácticos, cuando el usuario finaliza el configurador, el frontend dispone de una lista de *features* activas. Esa lista contiene información como:
 
-- cultivo seleccionado;
+- Tratamiento seleccionado;
 - tipo de suelo;
 - sensores de entrada;
 - índices de telemetría;
@@ -51,28 +51,28 @@ El backend recibe esas *features* y las transforma en parámetros de entrenamien
 def _features_to_training_params(features: list[str]) -> tuple[list[str], list[str], str]:
     features_set = set(features)
     target_names = set(FlamapyService.get_subtree_feature_names("VariableObjetivo"))
-    crop_names = set(FlamapyService.get_subtree_feature_names("Cultivo")) - {"Cultivo"}
+    treatment_names = set(FlamapyService.get_subtree_feature_names("Tratamiento")) - {"Tratamiento"}
 
     targets = [f for f in features_set if f in target_names]
 
     seen: set[str] = set()
     input_cols: list[str] = []
     for feature_name in features_set:
-        if feature_name in target_names or feature_name in crop_names:
+        if feature_name in target_names or feature_name in treatment_names:
             continue
         for col in FlamapyService.get_csv_columns(feature_name):
             if col not in seen:
                 seen.add(col)
                 input_cols.append(col)
 
-    crop = next((f for f in features_set if f in crop_names), "")
-    return targets, input_cols, crop
+    treatment = next((f for f in features_set if f in treatment_names), "")
+    return targets, input_cols, treatment
 ```
 
 La función realiza tres operaciones fundamentales:
 
 1. Obtiene las variables objetivo desde el subárbol `VariableObjetivo`.
-2. Obtiene el cultivo desde el subárbol `Cultivo`.
+2. Obtiene el Tratamiento desde el subárbol `Tratamiento`.
 3. Convierte las *features* de entrada en columnas reales de CSV usando los atributos `csv_col` y `csv_cols` del UVL.
 
 Esta decisión reduce el acoplamiento entre el código y el dominio agrícola. Por ejemplo, si en el futuro se añade un nuevo sensor al UVL con su atributo `csv_col`, el backend puede incorporarlo al entrenamiento sin modificar manualmente una lista de columnas en Python.
@@ -138,12 +138,12 @@ La petición se envía como `multipart/form-data` e incluye:
 La vista `train_model` valida la entrada, deriva los parámetros del entrenamiento y delega en `TrainingService`:
 
 ```python
-targets, input_cols, crop = _features_to_training_params(features)
+targets, input_cols, treatment = _features_to_training_params(features)
 
 model_id = _training_service.start_training(
     targets,
     input_cols,
-    crop,
+    treatment,
     csv_content,
     features=features,
     geo=geo,
@@ -199,50 +199,64 @@ Esta separación entre inicio del entrenamiento y consulta del estado mejora la 
 
 ## 4. Selección del algoritmo de entrenamiento
 
-El backend implementa una selección automática del algoritmo. La preferencia inicial se obtiene del perfil del cultivo, definido en el UVL mediante atributos como:
+agroTrain2 implementa **dos rutas de entrenamiento** que coexisten en `training_service.py`. La ruta activa se determina en función de si el UVL incluye atributos `hyperprofile_<target>` en el nodo de tratamiento.
 
-- `window_size`;
-- `preferred_algorithm`;
-- `min_samples`.
+### 4.1. Ruta hyperprofile (activa en el modelo v2)
 
-En el servicio de entrenamiento se recuperan así:
+El modelo UVL de referencia inspeccionado en el repositorio define para cada par *tratamiento × variable objetivo* un perfil de hiperparámetros identificado por una clave estable. En ejecución, el backend toma estos atributos de la versión UVL activa registrada en base de datos:
 
-```python
-profile = FlamapyService.get_crop_profile(crop)
-window_size = profile["window_size"]
-preferred = profile["preferred_algorithm"]
-min_samples = profile["min_samples"]
+```uvl
+RiegoControl {
+    window_size 7, min_samples 730,
+    hyperprofile_MCD 'secano_mcd_pls_v1',
+    pref_alg_MCD 'PLSRegression', window_MCD 3, feat_variant_MCD 'stress_indices',
+    hyperprofile_TasaBuenos 'control_tasabuenos_svr_v1',
+    pref_alg_TasaBuenos 'SVR', window_TasaBuenos 28, feat_variant_TasaBuenos 'target_only',
+    hyperprofile_TasaSeveros 'control_tasaseveros_lgbm_v1',
+    pref_alg_TasaSeveros 'LightGBM', window_TasaSeveros 3, feat_variant_TasaSeveros 'soil_profile'
+}
 ```
 
-La variable `window_size` indica cuántos días históricos se utilizan para construir la entrada temporal del modelo. Por ejemplo, si `window_size = 7`, una predicción se apoya en una ventana de siete días previos.
-
-La selección del algoritmo sigue esta lógica:
+`FlamapyService.get_treatment_target_profile(treatment, target)` lee estos atributos y devuelve el perfil completo. Si algún target tiene `hyperprofile`, el pipeline usa `_train_per_target`, que entrena cada variable objetivo de forma independiente con su propio algoritmo, ventana e ingeniería de características:
 
 ```python
-algorithm = preferred
-
-if preferred == "LSTM":
-    if not TF_AVAILABLE:
-        algorithm = "GradientBoosting"
-    elif n_joint < min_samples:
-        algorithm = "GradientBoosting"
-        
-    if algorithm == "LSTM":
-            self._train_lstm(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, features or [], geo or {})
-        else:
-            self._train_sklearn(model_id, df, targets, input_features, window_size, crop, all_cols, warnings, algorithm, features or [], geo or {})
-
-        self._create_db_record(model_id, user_id)
+has_hyperprofiles = any(p.get("hyperprofile") for p in treatment_target_profiles.values())
+if has_hyperprofiles:
+    self._train_per_target(...)  # ruta hyperprofile
+else:
+    ...  # ruta legacy (sección 4.2)
 ```
 
-Es decir:
+Los perfiles son inmutables y versionados en `hyperprofile_registry.py`. Cada clave referencia un diccionario con `algorithm`, `feature_variant`, `required_inputs`, `optional_inputs` y `params`. Esta inmutabilidad garantiza reproducibilidad: un modelo entrenado con `control_mcd_xgb_v1` sigue siendo predecible con la misma clave en el futuro, aunque se añadan nuevos perfiles al registro.
 
-1. Si el cultivo prefiere LSTM y hay TensorFlow disponible, se intenta usar LSTM.
-2. Si TensorFlow no está instalado o no puede importarse, se utiliza GradientBoosting.
-3. Si el número de filas completas es inferior al mínimo requerido, también se usa GradientBoosting.
-4. Si el cultivo ya prefiere GradientBoosting, se usa directamente ese algoritmo.
+La versión UVL activa puede dejar de referenciar perfiles históricos sin eliminarlos del registro. En el estado actual del proyecto, `Pluviometro`, `Riego` y `HumedadRiego` se han retirado del contrato productivo; los perfiles vigentes trabajan con humedad, temperatura, DPV, dendrómetro y telemetría opcional.
 
-Esta decisión tiene una justificación técnica. Los modelos LSTM son adecuados para series temporales, pero requieren más datos para generalizar correctamente. Cuando el conjunto de datos es pequeño, un modelo basado en árboles con variables temporales explícitas suele ser más robusto y menos propenso al sobreajuste.
+Los algoritmos disponibles en la ruta hyperprofile son: **XGBoost**, **LightGBM**, **PLSRegression**, **SVR** y **ElasticNet**. Si XGBoost o LightGBM no están instalados, el sistema realiza un *fallback* a `HistGradientBoostingRegressor` con un aviso en los metadatos del modelo.
+
+### 4.2. Ruta legacy (LSTM / RandomForest / GradientBoosting)
+
+Cuando el UVL no declara `hyperprofile_<target>`, el pipeline usa la ruta clásica. La preferencia se obtiene del tratamiento y, opcionalmente, de la variable objetivo:
+
+```python
+profile = FlamapyService.get_treatment_profile(treatment)
+target_profile = _merge_target_profiles([FlamapyService.get_target_profile(t) for t in targets])
+preferred = target_profile.get("preferred_algorithm", profile["preferred_algorithm"])
+```
+
+La selección sigue esta cadena de decisión:
+
+1. Si `preferred == "LSTM"` y TensorFlow no está disponible → `RandomForest` + aviso.
+2. Si `preferred == "LSTM"` y filas completas < `min_samples` → `RandomForest` + aviso.
+3. Si `preferred == "LSTM"` y datos suficientes → LSTM.
+4. En cualquier otro caso → el algoritmo preferido directamente (`GradientBoosting` o `RandomForest`).
+
+Esta ruta ejecuta todos los targets con el mismo algoritmo y la misma ventana, a diferencia de la ruta hyperprofile que los individualiza.
+
+### 4.3. Justificación del diseño de doble ruta
+
+La ruta hyperprofile nace de la fase de experimentación offline documentada en `docs/experimentacion_modelos.md`. Los experimentos demostraron que la combinación óptima de algoritmo, ventana e ingeniería de características varía significativamente entre pares tratamiento×objetivo. Esa evidencia justifica que el UVL pueda escoger perfiles distintos por target y que el registro conserve versiones históricas aunque el modelo activo evolucione: por ejemplo, MCD puede pasar de un perfil XGBoost experimental a un perfil PLSRegression con `stress_indices` sin romper modelos ya entrenados con la clave anterior.
+
+La ruta legacy se mantiene por compatibilidad con modelos ya entrenados y para tratamientos o configuraciones que no requieran precisión en la selección de hiperparámetros.
 
 ---
 
@@ -250,7 +264,7 @@ Esta decisión tiene una justificación técnica. Los modelos LSTM son adecuados
 
 ### 5.1. Motivación
 
-Las redes LSTM (*Long Short-Term Memory*) son un tipo de red neuronal recurrente diseñada para trabajar con secuencias. En este proyecto se emplean cuando el cultivo seleccionado requiere capturar dependencias temporales entre días consecutivos.
+Las redes LSTM (*Long Short-Term Memory*) son un tipo de red neuronal recurrente diseñada para trabajar con secuencias. En este proyecto se emplean cuando el Tratamiento seleccionado requiere capturar dependencias temporales entre días consecutivos.
 
 La idea principal es que la predicción de la variable objetivo no depende únicamente del valor actual de los sensores, sino también de su evolución reciente.
 
@@ -389,11 +403,11 @@ Además, se comparan los valores de R² con los umbrales de calidad definidos en
 
 ---
 
-## 6. Entrenamiento con GradientBoosting
+## 6. Entrenamiento tabular legacy
 
 ### 6.1. Motivación
 
-Cuando no hay suficientes datos para entrenar una LSTM, o TensorFlow no está disponible, el sistema utiliza `HistGradientBoostingRegressor` de scikit-learn.
+Cuando no hay suficientes datos para entrenar una LSTM, o TensorFlow no está disponible, la ruta legacy utiliza un modelo tabular de scikit-learn. En la implementación actual el fallback desde LSTM es `RandomForest`; la ruta tambien conserva soporte para `HistGradientBoostingRegressor` cuando la preferencia legacy es `GradientBoosting`.
 
 Este algoritmo no procesa secuencias directamente como una red recurrente. Por ello, el sistema transforma la serie temporal en un problema tabular de regresión, añadiendo características temporales explícitas:
 
@@ -445,13 +459,7 @@ vl_arr = scaler.transform(vl[[t] + feat_cols])
 X_tr, y_tr = tr_arr[:, 1:], tr_arr[:, 0]
 X_vl, y_vl = vl_arr[:, 1:], vl_arr[:, 0]
 
-est = HistGradientBoostingRegressor(
-    max_depth=5,
-    learning_rate=0.05,
-    max_iter=300,
-    early_stopping=True,
-    random_state=42,
-)
+est = _build_rf() if algorithm == "RandomForest" else _build_gb()
 est.fit(X_tr, y_tr)
 ```
 
@@ -464,6 +472,33 @@ feature_columns_by_target[t] = feat_cols
 Esto es esencial para la inferencia, ya que el modelo debe recibir las columnas en el mismo orden y con la misma estructura con la que fue entrenado.
 
 ---
+
+## 6b. Ingeniería de características modular (`feature_engineering.py`)
+
+La ruta hyperprofile utiliza un módulo de ingeniería de características (`backend/apps/modelos/services/feature_engineering.py`) que implementa **variantes** nombradas. Cada variante combina un conjunto específico de transformaciones temporales:
+
+| Variante | Transformaciones incluidas | Orientación |
+|---|---|---|
+| `basic` | Lags 1-5 + día del año cíclico | Uso general |
+| `long_lags` | Lags hasta ventana + medias móviles largas | Series con memoria larga |
+| `multi_roll` | Múltiples ventanas móviles (3, 7, 14, 30 d) | Tendencia a distintas escalas |
+| `ema` | Medias exponenciales (α = 0.3, 0.7) + lags cortos | Respuesta a eventos recientes |
+| `calendar` | Variables cíclicas de mes, semana, estación agronómica | Estacionalidad |
+| `irrigation_memory` | Nombre heredado; lags + medias móviles + día del año cíclico, sin acumulados de riego/lluvia en la implementación actual | Compatibilidad de perfiles antiguos |
+| `soil_profile` | Gradiente entre profundidades de humedad + lags | Suelos con perfil hídrico complejo |
+| `stress_indices` | Rango térmico e interacciones DPV-temperatura, combinables con telemetría opcional | Estrés hídrico severo |
+| `target_only` | Solo lags y suavizado del target (sin sensores externos) | Variables con alta autocorrelación |
+| `full` | Unión de todas las transformaciones anteriores | Experimentación exhaustiva |
+
+El atributo UVL `feat_variant_<target>` selecciona la variante apropiada para cada par tratamiento×objetivo. La función de entrada es:
+
+```python
+df_aug = add_features(df, feature_cols, window_size, feat_variant)
+```
+
+Todos los lags y medias móviles se aplican con `shift(≥1)`, garantizando que no hay fuga de información del día actual hacia las características de entrada (no data leakage).
+
+> **Sugerencia de figura ML-B.1**: tabla comparativa de variantes con el número de características adicionales que genera cada una para un dataset típico de 3 sensores de entrada, ventana 7 días. Ilustra el trade-off entre expresividad y sobreajuste.
 
 ## 7. Persistencia de modelos
 
@@ -500,14 +535,25 @@ El fichero `metadata.json` contiene información necesaria para reutilizar el mo
 ```json
 {
   "model_id": "...",
-  "algorithm": "GradientBoosting",
-  "crop": "Olivo",
-  "features": ["Olivo", "NDVI", "TasaBuenos"],
+  "algorithm": "Mixed",
+  "treatment": "RiegoControl",
+  "features": ["RiegoControl", "NDVI", "TasaBuenos"],
   "geo": { "punto": { "lat": 37.0, "lng": -4.0 } },
   "all_cols": ["TasaBuenos", "NDVI"],
   "targets": ["TasaBuenos"],
   "input_features": ["NDVI"],
-  "window_size": 7,
+  "window_size": 28,
+  "target_profiles": {
+    "TasaBuenos": {
+      "algorithm": "SVR",
+      "window_size": 28,
+      "feature_variant": "target_only",
+      "hyperprofile": "control_tasabuenos_svr_v1"
+    }
+  },
+  "feature_columns_by_target": {
+    "TasaBuenos": ["TasaBuenos_lag1", "TasaBuenos_roll7d"]
+  },
   "metrics": {
     "TasaBuenos": {
       "mae": 0.12,
@@ -528,7 +574,7 @@ class ModeloGuardado(models.Model):
     model_id = models.CharField(max_length=36, unique=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, ...)
     algorithm = models.CharField(max_length=50)
-    crop = models.CharField(max_length=100)
+    treatment = models.CharField(max_length=100)
     features = models.JSONField(default=list)
     geo = models.JSONField(default=dict)
     targets = models.JSONField()
@@ -560,7 +606,7 @@ Este registro permite:
 
 Una vez entrenado un modelo, el usuario puede acceder a “Mis modelos” y pulsar “Generar valor”. Este flujo no reentrena el modelo. Su finalidad es usar el modelo ya existente para producir un nuevo valor de la variable objetivo.
 
-El flujo se diseñó como una **predicción de un único paso**. Es decir, se genera un valor para la fecha actual o para el punto temporal inmediato, pero no se encadenan predicciones recursivas a varios días vista. Esta decisión simplifica la inferencia y reduce la acumulación de error.
+El flujo se diseñó como una **predicción de un único paso**. Es decir, se genera un valor para el día siguiente al último registro del CSV recibido, pero no se encadenan predicciones recursivas a varios días vista. Esta decisión simplifica la inferencia y reduce la acumulación de error.
 
 ### 8.2. Preparación de datos para inferencia
 
@@ -586,11 +632,12 @@ const canPredict = Boolean(
   fusionResult &&
   model &&
   fusionResult.rowCount >= model.window_size &&
-  !predictMutation.isPending
+  !predictMutation.isPending &&
+  !duplicateExists
 );
 ```
 
-También se valida de nuevo en el backend, por lo que la restricción no depende únicamente de la interfaz.
+También se valida de nuevo en el backend, por lo que la restricción no depende únicamente de la interfaz. `duplicateExists` compara la fecha a predecir —el día siguiente al último registro fusionado— con el historial reciente del modelo y evita lanzar dos inferencias para la misma fecha.
 
 ### 8.3. Extracción de telemetría GEE
 
@@ -649,6 +696,16 @@ La respuesta contiene el valor generado:
 }
 ```
 
+Si ya existe una predicción para el mismo modelo y la misma `predicted_for_date`, el backend responde con `409 Conflict`:
+
+```json
+{
+  "detail": "Ya existe una predicción para el 2026-05-01 en este modelo.",
+  "existing_prediction_id": 10,
+  "predicted_for_date": "2026-05-01"
+}
+```
+
 ---
 
 ## 9. Inferencia backend
@@ -667,7 +724,9 @@ def predict_one(self, model_id: str, csv_content: bytes) -> dict[str, Any]:
     all_cols = list(metadata.get("all_cols") or (targets + input_features))
     window_size = int(metadata.get("window_size") or 0)
 
-    if algorithm == "LSTM":
+    if metadata.get("target_profiles"):
+        predictions = self._predict_per_target(...)
+    elif algorithm == "LSTM":
         predictions = self._predict_lstm(model_id, df, targets, all_cols, window_size)
     else:
         predictions = self._predict_sklearn(
@@ -715,15 +774,16 @@ predictions[target] = float(value)
 
 La salida final es un diccionario `{variable_objetivo: valor}`.
 
-### 9.2. Inferencia con GradientBoosting
+### 9.2. Inferencia con modelos tabulares
 
-En el caso de GradientBoosting, el modelo entrenado espera recibir las mismas columnas derivadas que se construyeron durante el entrenamiento: retardos, medias móviles y variables cíclicas.
+En el caso de modelos tabulares, el estimador entrenado espera recibir las mismas columnas derivadas que se construyeron durante el entrenamiento: retardos, medias móviles, variables cíclicas y, en la ruta hyperprofile, la variante especifica declarada en `target_profiles`.
 
 Para generar esas columnas, el servicio crea una fila sintética que representa el instante de predicción:
 
 ```python
+predicted_for_date = (df["date"].max() + pd.Timedelta(days=1)).date()
 last = df_hist.iloc[-1]
-generated_date = pd.Timestamp(timezone.localdate())
+generated_date = pd.Timestamp(predicted_for_date)
 future_row = {"date": generated_date}
 
 for col in base_cols:
@@ -732,7 +792,7 @@ for col in base_cols:
 
 Esta fila no se usa como verdad de la variable objetivo, sino como soporte para que las funciones de `shift` y `rolling` puedan construir las columnas de entrada del instante actual. Los retardos siguen procediendo de los datos históricos reales.
 
-Después se aplican las mismas transformaciones temporales:
+Después se aplican las mismas transformaciones temporales. En la ruta legacy se usa `_add_temporal_features`; en la ruta hyperprofile se usa `feature_engineering.add_features` con la variante guardada en los metadatos:
 
 ```python
 df_future = pd.concat([df_hist, pd.DataFrame([future_row])], ignore_index=True)
@@ -763,25 +823,30 @@ Cada valor generado se almacena en la tabla `PrediccionModelo`:
 ```python
 class PrediccionModelo(models.Model):
     model = models.ForeignKey(ModeloGuardado, on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, ...)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, ...)
     generated_at = models.DateTimeField(auto_now_add=True)
     predicted_for_date = models.DateField()
     predictions = models.JSONField()
     input_row_count = models.IntegerField(default=0)
     warnings = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-predicted_for_date", "-generated_at"]
+        unique_together = [("model", "predicted_for_date")]
 ```
 
-La vista `predict_model` crea el registro tras ejecutar la inferencia:
+La vista `predict_model` crea el registro tras ejecutar la inferencia, siempre que no exista ya un valor generado para el mismo modelo y la misma fecha predicha:
 
 ```python
-prediction = PrediccionModelo.objects.create(
+predicted_for_date = result["predicted_for_date"]
+existing = PrediccionModelo.objects.filter(
     model=record,
-    user=request.user,
-    predicted_for_date=result["predicted_for_date"] or timezone.localdate(),
-    predictions=result["predictions"],
-    input_row_count=result["input_row_count"],
-    warnings=result.get("warnings", []),
-)
+    predicted_for_date=predicted_for_date,
+).first()
+if existing:
+    return Response(..., status=409)
+
+prediction = PrediccionModelo.objects.create(...)
 ```
 
 El historial se consulta mediante:
@@ -790,9 +855,24 @@ El historial se consulta mediante:
 GET /api/v1/modelos/{model_id}/predictions
 ```
 
-Este diseño aporta trazabilidad. No solo se conoce el modelo entrenado, sino también qué valores se generaron posteriormente, cuándo se generaron y con cuántas filas de entrada.
+Este diseño aporta trazabilidad y evita duplicar el mismo horizonte de predicción. No solo se conoce el modelo entrenado, sino también qué valores se generaron posteriormente, cuándo se generaron y con cuántas filas de entrada. En el frontend, `GenerarValorModelo.tsx` representa el historial reciente con Recharts para visualizar la evolución temporal de los valores generados por target.
 
 ---
+
+## 10b. Visualización de la serie de validación
+
+Cuando el entrenamiento termina, el backend incluye en el registro del estado (`_registry[model_id]`) la serie de validación real y predicha:
+
+```python
+val_series_data[t] = {
+    "y_true": y_true[:100].tolist(),
+    "y_pred": y_pred[:100].tolist(),
+}
+```
+
+El frontend, al consultar el estado completado, renderiza estas series mediante el componente `ValSeriesChart.tsx`. Este componente usa Recharts para dibujar dos líneas superpuestas —la real (verde) y la predicha (naranja discontinuo)— sobre el conjunto de validación, permitiendo al técnico evaluar visualmente la calidad del ajuste antes de guardar el modelo.
+
+> **Sugerencia de figura ML-B.2**: captura del componente `ValSeriesChart` con datos reales del experimento, mostrando la alineación entre la curva real y la predicha para MCD con `control_mcd_xgb_v1`. Incluir en el mismo frame el valor de R² calculado.
 
 ## 11. Interfaces públicas del módulo de modelos
 
@@ -804,7 +884,9 @@ El módulo expone las siguientes interfaces REST:
 | `GET /api/v1/modelos/{model_id}/status` | Consulta el estado de entrenamiento |
 | `GET /api/v1/modelos/` | Lista los modelos accesibles por el usuario |
 | `GET /api/v1/modelos/{model_id}/` | Obtiene metadatos de un modelo |
+| `DELETE /api/v1/modelos/{model_id}/` | Elimina un modelo accesible por el usuario |
 | `GET /api/v1/modelos/{model_id}/download` | Descarga el modelo como ZIP |
+| `POST /api/v1/modelos/import` | Importa un ZIP de modelo (solo administrador) |
 | `POST /api/v1/modelos/{model_id}/predict` | Genera un valor con un modelo guardado |
 | `GET /api/v1/modelos/{model_id}/predictions` | Lista el historial de predicciones |
 
@@ -824,7 +906,7 @@ La separación facilita el mantenimiento del sistema y permite evolucionar cada 
 La generación de modelos depende del UVL para conocer:
 
 - variables objetivo;
-- cultivos;
+- Tratamientos;
 - columnas CSV;
 - tamaño de ventana;
 - algoritmo preferido;
@@ -839,9 +921,9 @@ El entrenamiento puede tardar varios minutos, especialmente con LSTM. Por ello, 
 
 Esta decisión mejora la usabilidad y evita peticiones HTTP bloqueantes.
 
-### 12.3. Fallback de LSTM a GradientBoosting
+### 12.3. Fallback de LSTM a RandomForest
 
-La LSTM es más expresiva para series temporales, pero también más exigente en datos y dependencias. El fallback a GradientBoosting permite que el sistema siga funcionando en escenarios donde:
+La LSTM es más expresiva para series temporales, pero también más exigente en datos y dependencias. El fallback a RandomForest permite que el sistema siga funcionando en escenarios donde:
 
 - no hay TensorFlow disponible;
 - el dataset tiene menos filas de las necesarias;

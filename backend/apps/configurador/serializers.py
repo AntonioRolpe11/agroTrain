@@ -40,11 +40,16 @@ class UVLVersionDetailSerializer(UVLVersionListSerializer):
             with _temp_uvl_file(uvl_path.read_text(encoding="utf-8")) as tmp:
                 fm = UVLReader(str(tmp)).transform()
                 # Temporarily swap class state to serialise this version's tree
-                old_fm = FlamapyService._base_fm_model
-                FlamapyService._base_fm_model = fm
-                tree = FlamapyService.to_dict()
-                FlamapyService._base_fm_model = old_fm
-                return tree
+                with FlamapyService._state_lock:
+                    old_fm = FlamapyService._base_fm_model
+                    old_bdd = FlamapyService._base_bdd_model
+                    try:
+                        FlamapyService._base_fm_model = fm
+                        FlamapyService._base_bdd_model = FmToBDD(fm).transform()
+                        return FlamapyService.to_dict()
+                    finally:
+                        FlamapyService._base_fm_model = old_fm
+                        FlamapyService._base_bdd_model = old_bdd
         except Exception:
             return None
 
@@ -66,14 +71,24 @@ class ActivateUVLVersionSerializer(serializers.Serializer):
 
 
 class ConfiguracionSerializer(serializers.ModelSerializer):
+    uvl_version_name = serializers.SerializerMethodField()
+    uvl_version_active = serializers.SerializerMethodField()
+
     class Meta:
         model = Configuracion
         fields = [
             "id", "nombre", "features", "geo",
-            "uvl_version", "is_obsolete", "obsolete_reason",
+            "uvl_version", "uvl_version_name", "uvl_version_active",
+            "is_obsolete", "obsolete_reason",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "is_obsolete", "obsolete_reason", "created_at", "updated_at"]
+
+    def get_uvl_version_name(self, obj):
+        return obj.uvl_version.name if obj.uvl_version else None
+
+    def get_uvl_version_active(self, obj):
+        return obj.uvl_version.is_active if obj.uvl_version else False
 
 
 class ValidateResponseSerializer(serializers.Serializer):

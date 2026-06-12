@@ -1,4 +1,4 @@
-@startuml
+﻿@startuml
 
 title Diagrama de Secuencia: Generación de Modelo ML
 
@@ -21,9 +21,9 @@ participant "StorageService" as Storage
 Frontend -> API : POST /api/v1/modelos/train\n[multipart: features[] JSON + csv_file]
 activate API
 
-API -> Flamapy : get_subtree_feature_names("VariableObjetivo")\nget_subtree_feature_names("Cultivo")
+API -> Flamapy : get_subtree_feature_names("VariableObjetivo")\nget_subtree_feature_names("Tratamiento")
 activate Flamapy
-Flamapy --> API : nombres de targets y cultivos
+Flamapy --> API : nombres de targets y Tratamientos
 deactivate Flamapy
 
 API -> Flamapy : get_csv_columns(feature)\npara cada feature de entrada
@@ -35,11 +35,11 @@ note right of API
   _features_to_training_params():
   - target (1 variable, restricción ALTERNATIVE)
   - input_cols (columnas CSV de entrada)
-  - crop (cultivo seleccionado)
+  - treatment (Tratamiento seleccionado)
 end note
 
 API -> API : crear registro en _registry\nestado="training"
-API ->> Training : spawn hilo daemon\n_train(model_id, targets, input_cols, crop, csv_content)
+API ->> Training : spawn hilo daemon\n_train(model_id, targets, input_cols, treatment, csv_content)
 activate Training
 
 API --> Frontend : 202 Accepted\n{model_id, status: "training"}
@@ -56,7 +56,7 @@ par Sondeo del Frontend (cada 3 s)
         deactivate API
     end
 else Pipeline de Entrenamiento (hilo daemon)
-    Training -> Flamapy : get_crop_profile(cultivo)\n← atributos UVL del nodo cultivo
+    Training -> Flamapy : get_treatment_profile(Tratamiento)\n← atributos UVL del nodo Tratamiento
     activate Flamapy
     Flamapy --> Training : {window_size, preferred_algorithm, min_samples}
     deactivate Flamapy
@@ -109,3 +109,4 @@ deactivate API
 Frontend -> Frontend : mostrar resultados\n(indicadores de calidad)
 
 @enduml
+

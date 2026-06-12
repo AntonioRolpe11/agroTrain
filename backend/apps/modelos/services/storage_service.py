@@ -15,6 +15,16 @@ class StorageError(RuntimeError):
     pass
 
 
+_REQUIRED_METADATA_TYPES = {
+    "algorithm": str,
+    "targets": list,
+    "input_features": list,
+    "all_cols": list,
+    "metrics": dict,
+    "window_size": int,
+}
+
+
 class StorageService:
     # ------------------------------------------------------------------ paths
 
@@ -43,25 +53,57 @@ class StorageService:
         path = self._model_dir(model_id) / "metadata.json"
         if not path.exists():
             raise StorageError(f"metadata.json no encontrado para '{model_id}'.")
-        return json.loads(path.read_text(encoding="utf-8"))
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        if "treatment" not in metadata and "crop" in metadata:
+            metadata["treatment"] = metadata["crop"]
+        metadata.pop("crop", None)
+        return metadata
 
-    # ------------------------------------------------------------------ LSTM
+    def _validate_import_metadata(self, metadata: Any) -> dict[str, Any]:
+        if not isinstance(metadata, dict):
+            raise StorageError("metadata.json debe contener un objeto JSON.")
 
-    def save_lstm(self, model_id: str, models: dict, scalers: dict) -> None:
-        d = self._model_dir(model_id, create=True)
-        for target, model in models.items():
-            model.save(d / f"lstm_{target}.keras")
-        for name, scaler in scalers.items():
-            joblib.dump(scaler, d / f"scaler_{name}.pkl")
+        normalized = dict(metadata)
+        if "treatment" not in normalized and "crop" in normalized:
+            normalized["treatment"] = normalized["crop"]
+        normalized.pop("crop", None)
 
-    def load_lstm(self, model_id: str, targets: list[str]) -> tuple[dict, Any, dict]:
-        from tensorflow.keras.models import load_model  # type: ignore
+        required = {**_REQUIRED_METADATA_TYPES, "treatment": str}
+        for field, expected_type in required.items():
+            value = normalized.get(field)
+            if not isinstance(value, expected_type):
+                raise StorageError(f"metadata.json inválido: '{field}' debe ser {expected_type.__name__}.")
 
-        d = self._model_dir(model_id)
-        lstm_models = {t: load_model(d / f"lstm_{t}.keras") for t in targets}
-        scaler_X = joblib.load(d / "scaler_X.pkl")
-        scaler_Y = {t: joblib.load(d / f"scaler_{t}.pkl") for t in targets}
-        return lstm_models, scaler_X, scaler_Y
+        for optional_list in ("features", "warnings"):
+            value = normalized.get(optional_list, [])
+            if not isinstance(value, list):
+                raise StorageError(f"metadata.json inválido: '{optional_list}' debe ser list.")
+            normalized[optional_list] = value
+
+        for optional_int in ("n_samples", "n_train", "n_val"):
+            value = normalized.get(optional_int, 0)
+            if not isinstance(value, int):
+                raise StorageError(f"metadata.json inválido: '{optional_int}' debe ser int.")
+            normalized[optional_int] = value
+
+        geo = normalized.get("geo", {})
+        if not isinstance(geo, dict):
+            raise StorageError("metadata.json inválido: 'geo' debe ser dict.")
+        normalized["geo"] = geo
+
+        return normalized
+
+    @staticmethod
+    def _safe_extract_zip(zf: zipfile.ZipFile, target_dir: Path) -> None:
+        root = target_dir.resolve()
+        for member in zf.infolist():
+            member_path = Path(member.filename)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise StorageError("ZIP contiene rutas no permitidas (ZipSlip).")
+            target = (target_dir / member.filename).resolve()
+            if root != target and root not in target.parents:
+                raise StorageError("ZIP contiene rutas no permitidas (ZipSlip).")
+        zf.extractall(target_dir)
 
     # --------------------------------------------------------------- sklearn
 
@@ -109,21 +151,33 @@ class StorageService:
 
     def import_zip(self, zip_bytes: bytes) -> str:
         buf = io.BytesIO(zip_bytes)
+        new_id = str(uuid.uuid4())
+        d: Path | None = None
         try:
             with zipfile.ZipFile(buf, "r") as zf:
                 names = zf.namelist()
                 if "metadata.json" not in names:
                     raise StorageError("El ZIP no contiene metadata.json.")
 
-                new_id = str(uuid.uuid4())
                 d = self._model_dir(new_id, create=True)
-                zf.extractall(d)
+                self._safe_extract_zip(zf, d)
         except zipfile.BadZipFile:
             raise StorageError("El archivo no es un ZIP válido.")
+        except Exception:
+            if d is not None:
+                shutil.rmtree(d, ignore_errors=True)
+            raise
 
         # Actualizar model_id en metadata
         meta_path = d / "metadata.json"
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        try:
+            meta = self._validate_import_metadata(json.loads(meta_path.read_text(encoding="utf-8")))
+        except json.JSONDecodeError as exc:
+            shutil.rmtree(d, ignore_errors=True)
+            raise StorageError("metadata.json no es JSON válido.") from exc
+        except StorageError:
+            shutil.rmtree(d, ignore_errors=True)
+            raise
         meta["model_id"] = new_id
         meta["imported"] = True
         meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")

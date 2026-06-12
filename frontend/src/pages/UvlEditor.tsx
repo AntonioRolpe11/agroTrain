@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { StatusTag } from "@/components/ui/StatusTag";
 import type { FeatureModelNode, UVLPreviewActivationReport, UVLVersionSummary } from "@/types/api";
 import { uvlApi } from "@/services/uvlApi";
+import { featureModelQueryKey } from "@/hooks/useConfiguratorApi";
 
 // ── section definitions ───────────────────────────────────────────────────────
 
@@ -31,24 +32,40 @@ type SectionDef = {
   leavesOnly: boolean;
   excludeNames?: Set<string>;
   attrFields: AttrField[];
+  perTargetAttrKeys?: AttrField[];
 };
+
+const FEAT_VARIANTS = [
+  "basic", "ema", "soil_profile", "stress_indices",
+  "target_only", "full",
+];
+
+const ALGORITHMS = [
+  "SVR", "PLSRegression", "ElasticNet",
+  "RandomForest", "GradientBoosting",
+];
 
 const SECTIONS: SectionDef[] = [
   {
-    id: "cultivo",
-    title: "Cultivos",
+    id: "tratamiento",
+    title: "Tratamientos",
     hint: "Grupo alternative — sólo uno seleccionable por configuración.",
-    parentName: "Cultivo",
+    parentName: "Tratamiento",
     relType: "ALTERNATIVE",
     leavesOnly: false,
     attrFields: [
       { key: "label", label: "Etiqueta", type: "text" },
-      { key: "window_size", label: "Ventana (días)", type: "number", required: true },
-      { key: "preferred_algorithm", label: "Algoritmo", type: "select", options: ["LSTM", "GradientBoosting"], required: true },
-      { key: "min_samples", label: "Min muestras LSTM", type: "number", required: true },
+      { key: "window_size", label: "Ventana por defecto (días)", type: "number", required: true },
+      { key: "min_samples", label: "Min muestras", type: "number", required: true },
       { key: "min_reject", label: "min_reject", type: "number", required: true },
       { key: "min_warn", label: "min_warn", type: "number", required: true },
       { key: "min_good", label: "min_good", type: "number", required: true },
+    ],
+    perTargetAttrKeys: [
+      { key: "pref_alg", label: "Algoritmo", type: "select", options: ALGORITHMS, required: true },
+      { key: "window", label: "Ventana (días)", type: "number" },
+      { key: "feat_variant", label: "Variante features", type: "select", options: FEAT_VARIANTS, required: true },
+      { key: "hyperprofile", label: "Hyperprofile", type: "text", required: true },
     ],
   },
   {
@@ -102,6 +119,70 @@ const SECTIONS: SectionDef[] = [
   },
 ];
 
+// ── constraint step grouping ──────────────────────────────────────────────────
+
+const CONSTRAINT_STEP_ORDER = ["parcel", "sensors", "telemetry", "objective"] as const;
+type ConstraintStep = (typeof CONSTRAINT_STEP_ORDER)[number] | "other";
+
+const CONSTRAINT_STEP_LABELS: Record<ConstraintStep, string> = {
+  parcel: "Parcela",
+  sensors: "Sensores",
+  telemetry: "Telemetría",
+  objective: "Variable Objetivo",
+  other: "Global",
+};
+
+function buildFeatureStepMap(root: FeatureModelNode): Map<string, string> {
+  const map = new Map<string, string>();
+  function walk(node: FeatureModelNode, inheritedStep: string | null) {
+    const step = (node.attributes?.wizard_step as string | undefined) ?? inheritedStep;
+    if (step) map.set(node.name, step);
+    for (const rel of node.relations ?? []) {
+      for (const child of rel.children ?? []) walk(child, step);
+    }
+  }
+  walk(root, null);
+  return map;
+}
+
+function collectASTFeatureNames(node: ASTNode): string[] {
+  if (node.op === "FEATURE") return node.name ? [node.name] : [];
+  return [
+    ...(node.left ? collectASTFeatureNames(node.left) : []),
+    ...(node.right ? collectASTFeatureNames(node.right) : []),
+  ];
+}
+
+function constraintStepKey(ast: ASTNode, stepMap: Map<string, string>): ConstraintStep {
+  const features = collectASTFeatureNames(ast);
+  let maxIdx = -1;
+  for (const f of features) {
+    const idx = CONSTRAINT_STEP_ORDER.indexOf(stepMap.get(f) as never);
+    if (idx > maxIdx) maxIdx = idx;
+  }
+  return maxIdx >= 0 ? CONSTRAINT_STEP_ORDER[maxIdx] : "other";
+}
+
+function groupConstraintsByStep(
+  constraints: FeatureModelNode["constraints"],
+  tree: FeatureModelNode,
+): Record<string, string> {
+  if (!constraints?.length) return {};
+  const stepMap = buildFeatureStepMap(tree);
+  const groups: Record<string, string[]> = {};
+  for (const c of constraints) {
+    const key = constraintStepKey(c.ast as ASTNode, stepMap);
+    (groups[key] ??= []).push(astToText(c.ast as ASTNode));
+  }
+  return Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.join("\n")]));
+}
+
+function resizeTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 // ── tree helpers ──────────────────────────────────────────────────────────────
 
 const _PREC: Record<string, number> = { IMPLIES: 0, OR: 1, AND: 2, NOT: 3, FEATURE: 4 };
@@ -136,6 +217,12 @@ function findNodeByName(root: FeatureModelNode, name: string): FeatureModelNode 
 
 function isLeafNode(node: FeatureModelNode): boolean {
   return node.relations.every(r => r.children.length === 0);
+}
+
+function getObjectiveTargets(tree: FeatureModelNode): string[] {
+  const node = findNodeByName(tree, "VariableObjetivo");
+  if (!node) return [];
+  return node.relations.flatMap(r => r.children.map(c => c.name));
 }
 
 function getEditableLeaves(tree: FeatureModelNode, section: SectionDef): FeatureModelNode[] {
@@ -221,6 +308,7 @@ function useActivateVersion() {
       uvlApi.activateVersion(id, confirm),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: VERSIONS_KEY });
+      void qc.invalidateQueries({ queryKey: featureModelQueryKey });
       toast.success(data.detail);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Error al activar versión."),
@@ -285,9 +373,10 @@ function VersionCard({
 // ── LeafRow ───────────────────────────────────────────────────────────────────
 
 function LeafRow({
-  leaf, section, editable, onUpdate, onDelete,
+  leaf, section, editable, targets = [], onUpdate, onDelete,
 }: {
   leaf: FeatureModelNode; section: SectionDef; editable: boolean;
+  targets?: string[];
   onUpdate: (n: FeatureModelNode) => void; onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -308,9 +397,6 @@ function LeafRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-1.5 min-w-0">
             <span className="font-mono text-sm font-medium truncate">{leaf.name}</span>
-            {attrs.label && String(attrs.label) !== leaf.name && (
-              <span className="text-xs text-muted-foreground truncate shrink-0">— {String(attrs.label)}</span>
-            )}
           </div>
           {summary && !expanded && (
             <p className="text-xs text-muted-foreground truncate mt-0.5">{summary}</p>
@@ -366,6 +452,50 @@ function LeafRow({
               )}
             </div>
           ))}
+
+          {section.perTargetAttrKeys && targets.length > 0 && (
+            <div className="mt-1 space-y-3 pt-1 border-t border-border">
+              <p className="text-xs font-medium text-muted-foreground">Parámetros por variable objetivo</p>
+              {targets.map(target => (
+                <div key={target} className="pl-2 border-l-2 border-primary/30 space-y-1.5">
+                  <p className="text-xs font-semibold">{target}</p>
+                  {section.perTargetAttrKeys!.map(field => {
+                    const fullKey = `${field.key}_${target}`;
+                    return (
+                      <div key={fullKey} className="flex items-center gap-2">
+                        <Label className="text-xs w-36 shrink-0 text-muted-foreground">{field.label}</Label>
+                        {field.type === "select" ? (
+                          <select
+                            className="h-7 text-xs border border-input rounded px-1.5 bg-background flex-1"
+                            value={String(attrs[fullKey] ?? field.options![0])}
+                            onChange={e => onUpdate({ ...leaf, attributes: { ...attrs, [fullKey]: e.target.value } })}
+                          >
+                            {field.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <Input
+                            className="h-7 text-xs font-mono"
+                            type={field.type === "number" ? "number" : "text"}
+                            placeholder="opcional"
+                            value={String(attrs[fullKey] ?? "")}
+                            onChange={e => onUpdate({
+                              ...leaf,
+                              attributes: {
+                                ...attrs,
+                                [fullKey]: field.type === "number"
+                                  ? (e.target.value === "" ? "" : Number(e.target.value))
+                                  : e.target.value,
+                              },
+                            })}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -375,9 +505,9 @@ function LeafRow({
 // ── AddLeafForm ───────────────────────────────────────────────────────────────
 
 function AddLeafForm({
-  section, onAdd, onCancel,
+  section, targets = [], onAdd, onCancel,
 }: {
-  section: SectionDef; onAdd: (leaf: FeatureModelNode) => void; onCancel: () => void;
+  section: SectionDef; targets?: string[]; onAdd: (leaf: FeatureModelNode) => void; onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [vals, setVals] = useState<Record<string, string>>(() => {
@@ -432,6 +562,42 @@ function AddLeafForm({
           )}
         </div>
       ))}
+
+      {section.perTargetAttrKeys && targets.length > 0 && (
+        <div className="mt-1 space-y-3 pt-2 border-t border-border">
+          <p className="text-xs font-medium text-muted-foreground">Parámetros por variable objetivo</p>
+          {targets.map(target => (
+            <div key={target} className="pl-2 border-l-2 border-primary/30 space-y-1.5">
+              <p className="text-xs font-semibold">{target}</p>
+              {section.perTargetAttrKeys!.map(field => {
+                const fullKey = `${field.key}_${target}`;
+                return (
+                  <div key={fullKey} className="flex items-center gap-2">
+                    <Label className="text-xs w-36 shrink-0 text-muted-foreground">{field.label}</Label>
+                    {field.type === "select" ? (
+                      <select
+                        className="h-7 text-xs border border-input rounded px-1.5 bg-background flex-1"
+                        value={vals[fullKey] ?? field.options![0]}
+                        onChange={e => setVals(v => ({ ...v, [fullKey]: e.target.value }))}
+                      >
+                        {field.options!.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : (
+                      <Input
+                        className="h-7 text-xs font-mono"
+                        type={field.type === "number" ? "number" : "text"}
+                        placeholder="opcional"
+                        value={vals[fullKey] ?? ""}
+                        onChange={e => setVals(v => ({ ...v, [fullKey]: e.target.value }))}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex justify-end gap-1.5 pt-1">
         <Button size="sm" variant="ghost" onClick={onCancel}><X size={12} className="mr-1" />Cancelar</Button>
         <Button size="sm" onClick={submit}><Check size={12} className="mr-1" />Añadir</Button>
@@ -443,11 +609,12 @@ function AddLeafForm({
 // ── LeafGroupPanel ────────────────────────────────────────────────────────────
 
 function LeafGroupPanel({
-  section, leaves, editable, onChange,
+  section, leaves, editable, targets = [], onChange,
 }: {
   section: SectionDef;
   leaves: FeatureModelNode[];
   editable: boolean;
+  targets?: string[];
   onChange?: (updater: (current: FeatureModelNode[]) => FeatureModelNode[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -476,6 +643,7 @@ function LeafGroupPanel({
             leaf={leaf}
             section={section}
             editable={editable}
+            targets={targets}
             onUpdate={updated => onChange?.(arr => arr.map((l, i) => i === idx ? updated : l))}
             onDelete={() => onChange?.(arr => arr.filter((_, i) => i !== idx))}
           />
@@ -485,6 +653,7 @@ function LeafGroupPanel({
       {editable && adding && (
         <AddLeafForm
           section={section}
+          targets={targets}
           onAdd={leaf => { onChange?.(arr => [...arr, leaf]); setAdding(false); }}
           onCancel={() => setAdding(false)}
         />
@@ -576,7 +745,7 @@ export default function UvlEditor() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editTree, setEditTree] = useState<FeatureModelNode | null>(null);
-  const [constraintsText, setConstraintsText] = useState("");
+  const [constraintsByStep, setConstraintsByStep] = useState<Record<string, string>>({});
   const [draftName, setDraftName] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
   const [activatingId, setActivatingId] = useState<number | null>(null);
@@ -595,10 +764,10 @@ export default function UvlEditor() {
   function handleStartCreate() {
     if (versionDetail?.tree) {
       setEditTree(structuredClone(versionDetail.tree));
-      setConstraintsText(constraintsToText(versionDetail.tree.constraints));
+      setConstraintsByStep(groupConstraintsByStep(versionDetail.tree.constraints, versionDetail.tree));
     } else {
       setEditTree(null);
-      setConstraintsText("");
+      setConstraintsByStep({});
     }
     setDraftName(`Versión ${versions.length + 1}`);
     setDraftDesc("");
@@ -619,12 +788,18 @@ export default function UvlEditor() {
     );
   }
 
+  const constraintsText = [...CONSTRAINT_STEP_ORDER, "other" as const]
+    .map(s => constraintsByStep[s] ?? "")
+    .filter(Boolean)
+    .join("\n");
+
   // ── render helpers ──
 
   function renderSections(tree: FeatureModelNode, editable: boolean) {
+    const targets = getObjectiveTargets(tree);
     return (
       <div className="space-y-4">
-        {/* Parcela: Cultivos + Tipos suelo side by side */}
+        {/* Parcela: Tratamientos + Tipos suelo side by side */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-border rounded-xl p-4">
           {SECTIONS.slice(0, 2).map(section => (
             <LeafGroupPanel
@@ -632,6 +807,7 @@ export default function UvlEditor() {
               section={section}
               leaves={getEditableLeaves(tree, section)}
               editable={editable}
+              targets={section.id === "tratamiento" ? targets : undefined}
               onChange={editable ? handleSectionChange(section) : undefined}
             />
           ))}
@@ -712,19 +888,31 @@ export default function UvlEditor() {
               <>
                 {renderSections(editTree, true)}
 
-                <div className="space-y-1.5">
+                <div className="space-y-3">
                   <Label className="text-xs">
                     Constraints
                     <span className="text-muted-foreground font-normal ml-1">
                       (una por línea · FeatureA =&gt; FeatureB &amp; FeatureC)
                     </span>
                   </Label>
-                  <textarea
-                    className="w-full font-mono text-xs border border-input rounded-md p-2.5 bg-background resize-y min-h-36 focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={constraintsText}
-                    onChange={e => setConstraintsText(e.target.value)}
-                    spellCheck={false}
-                  />
+                  {([...CONSTRAINT_STEP_ORDER, "other" as const] as ConstraintStep[]).map(step => (
+                    <div key={step} className="space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                        {CONSTRAINT_STEP_LABELS[step]}
+                      </span>
+                      <textarea
+                        ref={resizeTextarea}
+                        className="w-full font-mono text-xs border border-input rounded-md p-2.5 bg-background resize-none min-h-8 overflow-hidden focus:outline-none focus:ring-1 focus:ring-ring"
+                        value={constraintsByStep[step] ?? ""}
+                        onChange={e => {
+                          setConstraintsByStep(prev => ({ ...prev, [step]: e.target.value }));
+                          resizeTextarea(e.target);
+                        }}
+                        spellCheck={false}
+                        placeholder={`Constraints que aplican en paso ${CONSTRAINT_STEP_LABELS[step].toLowerCase()}…`}
+                      />
+                    </div>
+                  ))}
                 </div>
               </>
             ) : (
@@ -777,11 +965,23 @@ export default function UvlEditor() {
                 {renderSections(versionDetail.tree, false)}
 
                 {versionDetail.tree.constraints && versionDetail.tree.constraints.length > 0 && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-3">
                     <h3 className="text-sm font-medium">Constraints</h3>
-                    <pre className="font-mono text-xs border border-border rounded-md p-2.5 bg-muted/30 whitespace-pre-wrap">
-                      {constraintsToText(versionDetail.tree.constraints)}
-                    </pre>
+                    {(() => {
+                      const grouped = groupConstraintsByStep(versionDetail.tree.constraints, versionDetail.tree);
+                      return ([...CONSTRAINT_STEP_ORDER, "other" as const] as ConstraintStep[])
+                        .filter(step => grouped[step])
+                        .map(step => (
+                          <div key={step} className="space-y-1">
+                            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                              {CONSTRAINT_STEP_LABELS[step]}
+                            </span>
+                            <pre className="font-mono text-xs border border-border rounded-md p-2.5 bg-muted/30 whitespace-pre-wrap">
+                              {grouped[step]}
+                            </pre>
+                          </div>
+                        ));
+                    })()}
                   </div>
                 )}
               </>

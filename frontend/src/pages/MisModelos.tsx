@@ -40,8 +40,27 @@ function MetricsSummary({ metrics }: { metrics?: ModelMetadata["metrics"] }) {
   );
 }
 
+function TypeBadge({ isValidation }: { isValidation?: boolean }) {
+  return isValidation === false ? (
+    <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">digital</span>
+  ) : (
+    <span className="text-xs bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded">validación</span>
+  );
+}
+
 function hasModelGeo(model: ModelMetadata): boolean {
   return Boolean(model.geo?.punto);
+}
+
+function modelLabel(model: ModelMetadata): string {
+  return model.geo?.nombre?.trim() || `#${model.model_id.slice(0, 8)}`;
+}
+
+function modelSubtitle(model: ModelMetadata): string | null {
+  const muni = model.geo?.municipioNombre?.trim();
+  const prov = model.geo?.provinciaNombre?.trim();
+  const place = [muni, prov].filter(Boolean).join(", ");
+  return place || null;
 }
 
 export default function MisModelos() {
@@ -54,7 +73,7 @@ export default function MisModelos() {
   const models = data?.models ?? [];
 
   async function handleDelete(m: ModelMetadata) {
-    if (!confirm(`¿Eliminar el modelo "${m.crop} — ${m.targets.join(", ")}"?`)) return;
+    if (!confirm(`¿Eliminar el modelo "${modelLabel(m)} — ${m.treatment}"?`)) return;
     setDeletingId(m.model_id);
     try {
       await deleteMut.mutateAsync(m.model_id);
@@ -108,22 +127,34 @@ export default function MisModelos() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left text-xs font-medium text-muted-foreground">
-                <th className="px-4 py-3">Cultivo</th>
+                <th className="px-4 py-3">Parcela</th>
+                <th className="px-4 py-3">Tratamiento</th>
                 <th className="px-4 py-3">Algoritmo</th>
                 <th className="px-4 py-3">Objetivos</th>
                 <th className="px-4 py-3">Métricas</th>
                 <th className="px-4 py-3">Muestras</th>
                 <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3 text-right">Acciones</th>
+                <th className="sticky right-0 z-10 bg-muted px-4 py-3 text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {models.map((m, i) => (
+              {models.map((m, i) => {
+                const rowBg = i % 2 === 0 ? "bg-background" : "bg-muted";
+                return (
                 <tr
                   key={m.model_id}
-                  className={`border-b border-border last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`}
+                  className={`border-b border-border last:border-0 ${rowBg}`}
                 >
-                  <td className="px-4 py-3 font-medium">{m.crop}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">{modelLabel(m)}</span>
+                      {modelSubtitle(m) && (
+                        <span className="text-xs text-muted-foreground">{modelSubtitle(m)}</span>
+                      )}
+                      <span className="font-mono text-[10px] text-muted-foreground/70">{m.model_id.slice(0, 8)}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-medium">{m.treatment}</td>
                   <td className="px-4 py-3">
                     <span className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
                       {m.algorithm}
@@ -133,14 +164,19 @@ export default function MisModelos() {
                         importado
                       </span>
                     )}
+                    <span className="ml-1"><TypeBadge isValidation={m.is_validation} /></span>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{m.targets.join(", ")}</td>
                   <td className="px-4 py-3">
-                    <MetricsSummary metrics={m.metrics} />
+                    {m.is_validation === false ? (
+                      <span className="text-xs text-muted-foreground">Sin validación · 100% datos</span>
+                    ) : (
+                      <MetricsSummary metrics={m.metrics} />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{m.n_samples}</td>
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmt(m.created_at)}</td>
-                  <td className="px-4 py-3">
+                  <td className={`sticky right-0 z-10 px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)] ${rowBg}`}>
                     <div className="flex items-center justify-end gap-2">
                       {hasModelGeo(m) ? (
                         <Link to={`/mis-modelos/${m.model_id}/generar-valor`}>
@@ -173,7 +209,8 @@ export default function MisModelos() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
