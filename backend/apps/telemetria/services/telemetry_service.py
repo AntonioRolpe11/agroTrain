@@ -33,7 +33,7 @@ class TelemetryService:
     REFLECTANCE_SCALE = 10000
     CLOUD_BIT_MASK = 1 << 10
     CIRRUS_BIT_MASK = 1 << 11
-    REDUCE_SCALE = 10  # resolución espacial Sentinel-2 10m (B2, B3, B4, B8)
+    REDUCE_SCALE = 10  # resolución espacial Sentinel-2 10m (B2, B3, B4, B8; B11 SWIR a 20m, GEE reproyecta)
     MAX_DATE_RANGE_DAYS = 730
 
     def __init__(self) -> None:
@@ -200,7 +200,10 @@ class TelemetryService:
                 ).rename("SAVI")
                 enriched = enriched.addBands(savi)
             elif index_name == "NDWI":
-                enriched = enriched.addBands(image.normalizedDifference(["B3", "B8"]).rename("NDWI"))
+                # NDWI de Gao (1996): (NIR - SWIR) / (NIR + SWIR) = (B8 - B11) / (B8 + B11).
+                # Sensible al contenido hídrico de la vegetación (estrés hídrico del olivar),
+                # no al agua superficial (esa es la NDWI de McFeeters, Verde-NIR).
+                enriched = enriched.addBands(image.normalizedDifference(["B8", "B11"]).rename("NDWI"))
             else:
                 raise TelemetryServiceError(f"Índice '{index_name}' no tiene fórmula implementada.")
         return enriched
