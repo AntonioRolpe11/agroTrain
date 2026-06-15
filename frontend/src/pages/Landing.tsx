@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, BrainCircuit, Cpu, LayoutList, Satellite, Sprout } from "lucide-react";
+import { ArrowRight, BookOpen, BrainCircuit, Cpu, LayoutList, Satellite, Sprout } from "lucide-react";
 import heroImage from "@/assets/hero-olive.jpg";
 
 const features = [
@@ -70,6 +70,31 @@ export default function Landing() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="section-container pt-12">
+        <Link
+          to="/como-funciona"
+          className="group relative block overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-7 lg:p-9 transition-all hover:border-primary/60 hover:shadow-lg active:scale-[0.99]"
+        >
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-primary/15 p-3 text-olive">
+                <BookOpen className="h-7 w-7" />
+              </div>
+              <div>
+                <h2 className="mb-1 text-2xl font-bold">¿Primera vez con AgroTrain?</h2>
+                <p className="max-w-xl text-muted-foreground">
+                  Descubre qué es un sensor digital, cómo funciona el asistente de 4 pasos y qué obtienes al final.
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-transform group-hover:translate-x-0.5">
+              Ver cómo funciona
+              <ArrowRight className="h-4 w-4" />
+            </span>
+          </div>
+        </Link>
       </section>
 
       <section className="section-container py-20">

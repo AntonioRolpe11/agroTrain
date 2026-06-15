@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { FeatureTreesProvider } from "@/contexts/FeatureTreesContext";
 import { GeoProvider } from "@/lib/geoContext";
+import ComoFunciona from "@/pages/ComoFunciona";
 import DigitalSensorCreation from "@/pages/DigitalSensorCreation";
 import GenerarValorModelo from "@/pages/GenerarValorModelo";
 import Landing from "@/pages/Landing";
@@ -34,6 +35,7 @@ const App = () => (
                 <Route element={<RequireAuth />}>
                   <Route element={<Layout />}>
                     <Route path="/" element={<Landing />} />
+                    <Route path="/como-funciona" element={<ComoFunciona />} />
                     <Route path="/creacion-sensor-digital" element={<DigitalSensorCreation />} />
                     <Route path="/validacion-modelo" element={<Results />} />
                     <Route path="/mis-modelos" element={<MisModelos />} />
