@@ -10,6 +10,7 @@ import { ConstraintHints } from "@/components/steps/ConstraintHints";
 import { SectionTitle } from "@/components/steps/SectionTitle";
 import { useFeatureModelQuery } from "@/hooks/useConfiguratorApi";
 import { useFeatureTrees } from "@/hooks/useFeatureTrees";
+import { FEATURE_HELP } from "@/lib/featureHelp";
 import { useGeo } from "@/hooks/useGeo";
 import { collectFeatureNames, getNode, buildLabelMap, buildAccumulatedScope } from "@/utils/featureModel";
 import { getViolations, getIncomingRequirements } from "@/utils/constraintEvaluator";
@@ -56,7 +57,7 @@ export function StepTelemetria({ serverErrors, isPending, onComplete }: StepTele
 
   return (
     <div className="config-block animate-reveal-up" style={{ animationDelay: "140ms" }}>
-      <SectionTitle icon={Satellite} title="Datos de telemetría" iconClassName="text-satellite-amber" />
+      <SectionTitle icon={Satellite} title="Datos de telemetría" iconClassName="text-satellite-amber" help={FEATURE_HELP.DatosTelemetria} />
 
       {telemetriaNode && <FeatureNode node={telemetriaNode} index={0} />}
 

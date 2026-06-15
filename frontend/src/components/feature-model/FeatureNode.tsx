@@ -88,7 +88,6 @@ export function FeatureNode({ node, index = 0, depth = 0, readOnly = false, labe
                   (child.attributes?.label as string | undefined) ??
                   labelMap?.[child.name] ??
                   child.name;
-
                 if (isMandatory) {
                   return (
                     <span

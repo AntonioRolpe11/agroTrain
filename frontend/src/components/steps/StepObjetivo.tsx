@@ -7,6 +7,7 @@ import { ConstraintHints } from "@/components/steps/ConstraintHints";
 import { SectionTitle } from "@/components/steps/SectionTitle";
 import { useFeatureModelQuery } from "@/hooks/useConfiguratorApi";
 import { useFeatureTrees } from "@/hooks/useFeatureTrees";
+import { FEATURE_HELP } from "@/lib/featureHelp";
 import {
   collectFeatureNames,
   getNode,
@@ -65,7 +66,7 @@ export function StepObjetivo({
 
   return (
     <div className="config-block animate-reveal-up" style={{ animationDelay: "200ms" }}>
-      <SectionTitle icon={Target} title="Variable objetivo" iconClassName="text-olive" />
+      <SectionTitle icon={Target} title="Variable objetivo" iconClassName="text-olive" help={FEATURE_HELP.VariableObjetivo} />
 
       {objetivoNode && <FeatureNode node={objetivoNode} index={0} />}
 

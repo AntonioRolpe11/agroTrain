@@ -2,10 +2,12 @@ import { type ReactNode } from "react";
 import { MapPinned } from "lucide-react";
 
 import { FeatureNode } from "@/components/feature-model/FeatureNode";
+import { HelpTip } from "@/components/ui/help-tip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFeatureModelQuery, useMunicipiosQuery, useProvinciasQuery } from "@/hooks/useConfiguratorApi";
 import { useGeo } from "@/hooks/useGeo";
+import { FEATURE_HELP } from "@/lib/featureHelp";
 import { getNode } from "@/utils/featureModel";
 
 const selectClassName =
@@ -114,11 +116,17 @@ export function ParcelDataCard({ footer, serverErrors = [] }: ParcelDataCardProp
       {(tratamientoNode || tipoSueloNode) && (
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           <div>
-            <Label className="mb-2 block text-sm font-semibold">Tratamiento de riego</Label>
+            <div className="mb-2 flex items-center gap-1.5">
+              <Label className="block text-sm font-semibold">Tratamiento de riego</Label>
+              <HelpTip text={FEATURE_HELP.Tratamiento} />
+            </div>
             {tratamientoNode && <FeatureNode node={tratamientoNode} index={0} />}
           </div>
           <div>
-            <Label className="mb-2 block text-sm font-semibold">Tipo de suelo</Label>
+            <div className="mb-2 flex items-center gap-1.5">
+              <Label className="block text-sm font-semibold">Tipo de suelo</Label>
+              <HelpTip text={FEATURE_HELP.TipoSuelo} />
+            </div>
             {tipoSueloNode && <FeatureNode node={tipoSueloNode} index={0} />}
           </div>
         </div>

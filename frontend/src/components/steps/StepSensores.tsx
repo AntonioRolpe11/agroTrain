@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ConstraintHints } from "@/components/steps/ConstraintHints";
 import { SectionTitle } from "@/components/steps/SectionTitle";
 import { useFeatureModelQuery } from "@/hooks/useConfiguratorApi";
+import { FEATURE_HELP } from "@/lib/featureHelp";
 import { useFeatureTrees } from "@/hooks/useFeatureTrees";
 import { collectFeatureNames, getNode, buildLabelMap, buildAccumulatedScope } from "@/utils/featureModel";
 import { getViolations, getIncomingRequirements } from "@/utils/constraintEvaluator";
@@ -50,7 +51,7 @@ export function StepSensores({ serverErrors, isPending, onComplete }: StepSensor
 
   return (
     <div className="config-block animate-reveal-up" style={{ animationDelay: "100ms" }}>
-      <SectionTitle icon={Droplets} title="Parámetros de entrada" iconClassName="text-sensor-green" />
+      <SectionTitle icon={Droplets} title="Parámetros de entrada" iconClassName="text-sensor-green" help={FEATURE_HELP.ParametrosEntrada} />
 
       {parametrosNode && <FeatureNode node={parametrosNode} index={0} />}
 
