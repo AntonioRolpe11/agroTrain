@@ -392,3 +392,23 @@ def list_predictions(request, model_id: str):
     if not request.user.is_admin:
         predictions = predictions.filter(user=request.user)
     return Response({"predictions": [_prediction_from_db(p) for p in predictions]})
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_prediction(request, model_id: str, prediction_id: int):
+    record_or_response = _get_authorized_model(request, model_id)
+    if isinstance(record_or_response, Response):
+        return record_or_response
+    record = record_or_response
+
+    predictions = PrediccionModelo.objects.filter(model=record, pk=prediction_id)
+    if not request.user.is_admin:
+        predictions = predictions.filter(user=request.user)
+
+    prediction = predictions.first()
+    if prediction is None:
+        return Response({"detail": "Predicción no encontrada."}, status=404)
+
+    prediction.delete()
+    return Response(status=204)

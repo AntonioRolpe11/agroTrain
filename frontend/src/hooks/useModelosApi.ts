@@ -79,6 +79,17 @@ export function usePredictionHistoryQuery(modelId: string | null) {
   });
 }
 
+export function useDeletePredictionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, { modelId: string; predictionId: number }>({
+    mutationFn: ({ modelId, predictionId }) => modelosApi.deletePrediction(modelId, predictionId),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: modelosQueryKeys.predictions(variables.modelId) });
+    },
+    retry: 0,
+  });
+}
+
 export function useDeleteModelMutation() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, GitMerge, History, Info, Loader2, Play, Satellite, Sparkles, Thermometer, TreeDeciduous } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, GitMerge, History, Info, Loader2, Play, Satellite, Sparkles, Thermometer, Trash2, TreeDeciduous } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -10,7 +10,7 @@ import { TelemetryPreview } from "@/components/results/TelemetryPreview";
 import { Button } from "@/components/ui/button";
 import { StatusTag } from "@/components/ui/StatusTag";
 import { useExtractTelemetryMutation, useFeatureModelQuery } from "@/hooks/useConfiguratorApi";
-import { useModelDetailQuery, usePredictionHistoryQuery, usePredictModelMutation } from "@/hooks/useModelosApi";
+import { useDeletePredictionMutation, useModelDetailQuery, usePredictionHistoryQuery, usePredictModelMutation } from "@/hooks/useModelosApi";
 import { calculateDendroParams } from "@/lib/dendroCalc";
 import { fuseSensorAndTelemetry, fusionResultToCsv, type FusionResult } from "@/lib/dataFusion";
 import { parseCsvFileGeneric, type GenericCsvDataset } from "@/lib/csvDataset";
@@ -73,6 +73,7 @@ export default function GenerarValorModelo() {
   const featureModelQuery = useFeatureModelQuery();
   const extractTelemetryMutation = useExtractTelemetryMutation();
   const predictMutation = usePredictModelMutation();
+  const deletePredictionMutation = useDeletePredictionMutation();
 
   const model = modelQuery.data ?? null;
   const featureModel = featureModelQuery.data ?? null;
@@ -278,6 +279,17 @@ export default function GenerarValorModelo() {
       } else {
         toast.error("Error al generar valor", { description: msg });
       }
+    }
+  };
+
+  const handleDeletePrediction = async (predictionId: number, dateLabel: string) => {
+    if (!modelId) return;
+    if (!window.confirm(`¿Borrar la predicción del ${dateLabel}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await deletePredictionMutation.mutateAsync({ modelId, predictionId });
+      toast.success("Predicción borrada");
+    } catch (err) {
+      toast.error("No se pudo borrar la predicción", { description: err instanceof Error ? err.message : "Error desconocido." });
     }
   };
 
@@ -526,7 +538,19 @@ export default function GenerarValorModelo() {
                       <span className="font-medium">{fmtDate(p.predicted_for_date)}</span>
                       <span className="text-xs text-muted-foreground">Generado el {fmt(p.generated_at)}</span>
                     </div>
-                    <span className="text-muted-foreground">{Object.entries(p.predictions).map(([t, v]) => `${t}: ${Number(v).toFixed(4)}`).join(" · ")}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted-foreground">{Object.entries(p.predictions).map(([t, v]) => `${t}: ${Number(v).toFixed(4)}`).join(" · ")}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        title="Borrar predicción"
+                        disabled={deletePredictionMutation.isPending}
+                        onClick={() => handleDeletePrediction(p.prediction_id, fmtDate(p.predicted_for_date))}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

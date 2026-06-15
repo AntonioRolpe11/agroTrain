@@ -180,6 +180,50 @@ class TestPredictionHistory:
 
 
 @pytest.mark.django_db
+class TestDeletePrediction:
+    def _model_with_prediction(self, owner, *, model_id="dp"):
+        m = ModeloGuardado.objects.create(
+            model_id=model_id, user=owner, algorithm="RF", treatment="S",
+            targets=["MCD"], input_features=[], metrics={},
+            geo={"punto": {"lat": 1, "lng": 1}},
+        )
+        p = PrediccionModelo.objects.create(
+            model=m, user=owner, predicted_for_date="2026-04-30",
+            predictions={"MCD": 1.0}, input_row_count=5, warnings=[],
+        )
+        return m, p
+
+    def test_owner_can_delete(self, tecnico_user, tecnico_client):
+        m, p = self._model_with_prediction(tecnico_user)
+        response = tecnico_client.delete(f"/api/v1/modelos/{m.model_id}/predictions/{p.id}")
+        assert response.status_code == 204
+        assert not PrediccionModelo.objects.filter(pk=p.id).exists()
+
+    def test_missing_prediction_returns_404(self, tecnico_user, tecnico_client):
+        m, _ = self._model_with_prediction(tecnico_user)
+        response = tecnico_client.delete(f"/api/v1/modelos/{m.model_id}/predictions/999999")
+        assert response.status_code == 404
+
+    def test_other_tecnico_blocked(self, tecnico_client, admin_user):
+        m, p = self._model_with_prediction(admin_user, model_id="dp-foreign")
+        response = tecnico_client.delete(f"/api/v1/modelos/{m.model_id}/predictions/{p.id}")
+        assert response.status_code == 403
+        assert PrediccionModelo.objects.filter(pk=p.id).exists()
+
+    def test_admin_can_delete_any(self, tecnico_user, admin_client):
+        m, p = self._model_with_prediction(tecnico_user, model_id="dp-admin")
+        response = admin_client.delete(f"/api/v1/modelos/{m.model_id}/predictions/{p.id}")
+        assert response.status_code == 204
+        assert not PrediccionModelo.objects.filter(pk=p.id).exists()
+
+    def test_anonymous_blocked(self, tecnico_user, anon_client):
+        m, p = self._model_with_prediction(tecnico_user, model_id="dp-anon")
+        response = anon_client.delete(f"/api/v1/modelos/{m.model_id}/predictions/{p.id}")
+        assert response.status_code in (401, 403)
+        assert PrediccionModelo.objects.filter(pk=p.id).exists()
+
+
+@pytest.mark.django_db
 class TestDownloadModel:
     def test_owner_can_download(self, tecnico_user, tecnico_client, tmp_path):
         write_sklearn_model(tmp_path, "dl", user_id=tecnico_user.pk)

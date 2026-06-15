@@ -60,6 +60,14 @@ export const modelosApi = {
     return authFetchJson<{ predictions: PredictionHistoryItem[] }>(`/api/v1/modelos/${modelId}/predictions`);
   },
 
+  async deletePrediction(modelId: string, predictionId: number): Promise<void> {
+    const response = await authFetch(`/api/v1/modelos/${modelId}/predictions/${predictionId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`${response.status}: ${detail}`);
+    }
+  },
+
   getDownloadUrl(modelId: string): string {
     return `${getApiBase()}/api/v1/modelos/${modelId}/download`;
   },
