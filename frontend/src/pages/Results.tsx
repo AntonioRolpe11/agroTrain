@@ -501,7 +501,7 @@ export default function Results() {
     <div className="section-container max-w-7xl py-10">
       <div className="mx-auto max-w-6xl space-y-6">
         <div>
-          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">{sensorType === "digital" ? "Generación del sensor digital y datos de entrenamiento" : "Validación del modelo y datos de entrenamiento"}</h1>
+          <h1 className="animate-reveal-up mb-2 text-3xl font-bold">{sensorType === "digital" ? "Sensor digital operativo y datos de entrenamiento" : "Sensor digital de validación y datos de entrenamiento"}</h1>
           <p className="animate-reveal-up text-muted-foreground" style={{ animationDelay: "60ms" }}>
             Revisa la configuración seleccionada, añade tus CSV de sensores y telemetría, y deja preparado el paso previo a generar el sensor digital.
           </p>

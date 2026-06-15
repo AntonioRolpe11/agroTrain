@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, GitMerge, History, Loader2, Play, Satellite, Sparkles, Thermometer, TreeDeciduous } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, GitMerge, History, Info, Loader2, Play, Satellite, Sparkles, Thermometer, TreeDeciduous } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -322,6 +322,16 @@ export default function GenerarValorModelo() {
         </div>
       </div>
 
+      <div className="mb-8 flex items-start gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm">
+        <Info className="mt-0.5 h-5 w-5 shrink-0 text-olive" />
+        <p className="text-muted-foreground">
+          A partir de un modelo ya entrenado, esta pantalla calcula el <strong>valor estimado de la
+          variable objetivo para el día siguiente al último dato que aportas</strong>. Es la lectura que
+          produciría el sensor digital —reproduce lo que mediría un sensor físico colocado en ese árbol— y
+          te ayuda a hacerte una idea de su comportamiento sin instalarlo.
+        </p>
+      </div>
+
       <div className="space-y-8">
         <SensorLocationMap punto={punto} />
 
@@ -415,7 +425,7 @@ export default function GenerarValorModelo() {
             <div className="rounded-lg bg-primary/10 p-2 text-olive"><GitMerge className="h-5 w-5" /></div>
             <div>
               <h2 className="text-lg font-semibold">3. Fusión y generación</h2>
-              <p className="text-sm text-muted-foreground">Fusiona sensores y telemetría, y genera un único valor sin predicción recursiva.</p>
+              <p className="text-sm text-muted-foreground">Fusiona sensores y telemetría y genera el valor numérico estimado de la variable para el día siguiente al último dato aportado (un solo paso, sin predicción recursiva).</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-3">

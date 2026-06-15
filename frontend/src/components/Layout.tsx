@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const NAV_ITEMS = [
   { path: "/", label: "Inicio" },
   { path: "/creacion-sensor-digital", label: "Creación sensor digital" },
-  { path: "/validacion-modelo", label: "Validación del modelo" },
+  { path: "/validacion-modelo", label: "Datos y entrenamiento" },
   { path: "/mis-modelos", label: "Mis modelos" },
 ];
 

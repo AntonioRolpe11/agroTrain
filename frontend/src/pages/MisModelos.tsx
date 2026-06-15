@@ -118,7 +118,7 @@ export default function MisModelos() {
 
       {!isLoading && !isError && models.length === 0 && (
         <div className="text-center py-20 text-muted-foreground text-sm">
-          No hay modelos guardados. Entrena uno desde <a href="/validacion-modelo" className="underline">Validación del modelo</a>.
+          No hay modelos guardados. Entrena uno desde <a href="/validacion-modelo" className="underline">Datos y entrenamiento</a>.
         </div>
       )}
 
