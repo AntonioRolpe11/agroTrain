@@ -468,6 +468,15 @@ export default function Results() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
+  const handleDownloadModel = async () => {
+    if (!activeModelId) return;
+    try {
+      await modelosApi.downloadModel(activeModelId);
+    } catch {
+      toast.error("Error al descargar el modelo");
+    }
+  };
+
   const handleGenerateSensor = async () => {
     if (!fusionResult || !canTrain) return;
     const csvContent = fusionResultToCsv(fusionResult, ";");
@@ -1012,9 +1021,7 @@ export default function Results() {
                 </div>
               )}
               <div className="flex flex-wrap gap-3">
-                <a href={modelosApi.getDownloadUrl(activeModelId)} download>
-                  <Button variant="outline"><Download className="mr-2 h-4 w-4" />Descargar modelo (.zip)</Button>
-                </a>
+                <Button variant="outline" onClick={handleDownloadModel}><Download className="mr-2 h-4 w-4" />Descargar modelo (.zip)</Button>
                 <Button variant="outline" onClick={() => { setActiveModelId(null); trainMutation.reset(); }}>
                   <Sparkles className="mr-2 h-4 w-4" />Reentrenar
                 </Button>

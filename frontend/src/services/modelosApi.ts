@@ -72,6 +72,29 @@ export const modelosApi = {
     return `${getApiBase()}/api/v1/modelos/${modelId}/download`;
   },
 
+  // Descarga autenticada: el ZIP requiere JWT Bearer, que va en localStorage y
+  // no se adjunta en una navegación directa <a href> (de ahí el 401). Se baja
+  // con authFetch y se dispara la descarga desde el blob.
+  async downloadModel(modelId: string): Promise<void> {
+    const response = await authFetch(`/api/v1/modelos/${modelId}/download`);
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`${response.status}: ${detail}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    const filename = match?.[1] ?? `modelo_${modelId.slice(0, 8)}.zip`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   async importModel(zipBlob: Blob): Promise<ModelMetadata> {
     const form = new FormData();
     form.append("zip_file", zipBlob, "modelo.zip");

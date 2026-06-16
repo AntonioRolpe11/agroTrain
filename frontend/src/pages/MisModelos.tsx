@@ -85,6 +85,14 @@ export default function MisModelos() {
     }
   }
 
+  async function handleDownload(m: ModelMetadata) {
+    try {
+      await modelosApi.downloadModel(m.model_id);
+    } catch {
+      toast.error("Error al descargar el modelo");
+    }
+  }
+
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -191,12 +199,10 @@ export default function MisModelos() {
                           Generar valor
                         </Button>
                       )}
-                      <a href={modelosApi.getDownloadUrl(m.model_id)} download>
-                        <Button variant="outline" size="sm">
-                          <Download className="w-3.5 h-3.5 mr-1.5" />
-                          ZIP
-                        </Button>
-                      </a>
+                      <Button variant="outline" size="sm" onClick={() => handleDownload(m)}>
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        ZIP
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
