@@ -34,6 +34,8 @@ services:
       EE_SERVICE_ACCOUNT: ${EE_SERVICE_ACCOUNT:-gee-images@eeproject-492305.iam.gserviceaccount.com}
       EE_PRIVATE_KEY_FILE: /app/secrets/gee-key.json
       EE_PROJECT: ${EE_PROJECT:-eeproject-492305}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@agrotrain.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin}
     ports:
       - "8000:8000"
     depends_on:
