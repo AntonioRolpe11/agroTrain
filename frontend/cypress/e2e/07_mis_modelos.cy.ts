@@ -32,7 +32,7 @@ describe("Mis modelos", () => {
   });
 
   it("deshabilita 'Generar valor' para modelos sin ubicación guardada", () => {
-    cy.trainModelViaApi({ geo: { nombre: "Sin punto" } }); // sin geo.punto
+    cy.trainModelViaApi({ geo: { nombre: "Sin punto E2E" } }); // sin geo.punto
     cy.visit("/mis-modelos");
     cy.get('[data-cy="model-row"]', { timeout: 10000 }).should("have.length", 1);
     cy.get('[data-cy="model-generar-disabled"]').should("be.disabled");

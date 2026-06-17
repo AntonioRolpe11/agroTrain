@@ -115,6 +115,9 @@ Cypress.Commands.add("completeWizard", (opts: WizardOptions = {}) => {
   cy.get("#parcela-municipio option")
     .eq(1)
     .then((opt) => cy.get("#parcela-municipio").select(String(opt.val())));
+  // Tag the parcel name with the "E2E" marker so reset_test_state can purge
+  // this model's on-disk artifacts without touching a developer's own models.
+  cy.get("#parcela-nombre").clear().type("Parcela E2E");
   cy.get('[data-cy="wizard-parcel-next"]').should("not.be.disabled").click();
 
   // Step 2 — Sensores

@@ -7,6 +7,7 @@ suites that cross the frontend/backend boundary.
 
 Workflow:
     1. Flush the development DB.
+    1b. Purge on-disk model_storage artifacts (orphaned by the DB flush).
     2. Apply migrations.
     3. Seed a deterministic admin + tecnico user.
     4. Activate the canonical UVL fixture (`v2_olivos_tratamientos.uvl`) as the
@@ -75,6 +76,27 @@ class Command(BaseCommand):
 
         # 1. Flush DB content (keeps the migration history)
         call_command("flush", "--no-input", verbosity=0)
+
+        # 1b. Purge on-disk artifacts of E2E-created models only. flush drops the
+        # ModeloGuardado rows but the model_storage/<uuid>/ dirs (metadata.json +
+        # .pkl) persist, leaving orphans across runs. We delete ONLY dirs whose
+        # metadata marks them as test models (geo.nombre contains "E2E"), so a
+        # developer's own models in the same store survive.
+        storage = Path(settings.MODELS_STORAGE_PATH)
+        if storage.exists():
+            for child in storage.iterdir():
+                if not child.is_dir():
+                    continue
+                meta_file = child / "metadata.json"
+                if not meta_file.exists():
+                    continue
+                try:
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                nombre = (meta.get("geo") or {}).get("nombre") or ""
+                if "E2E" in nombre:
+                    shutil.rmtree(child, ignore_errors=True)
 
         # 2. Apply migrations (idempotent — needed if a fresh sqlite file is in use)
         call_command("migrate", "--no-input", verbosity=0)
