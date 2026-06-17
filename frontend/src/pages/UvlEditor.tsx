@@ -336,6 +336,8 @@ function VersionCard({
 }) {
   return (
     <div
+      data-cy="uvl-version-card"
+      data-cy-active={version.is_active ? "true" : "false"}
       className={`group relative rounded-lg border transition-colors cursor-pointer ${
         selected ? "border-primary/40 bg-primary/5" : "border-transparent hover:border-border hover:bg-muted/40"
       }`}
@@ -343,12 +345,13 @@ function VersionCard({
     >
       <div className="px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-sm truncate">{version.name}</span>
+          <span className="font-medium text-sm truncate" data-cy="uvl-version-name">{version.name}</span>
           <div className="flex items-center gap-1.5 shrink-0">
             {version.is_active && <StatusTag tone="success">Activa</StatusTag>}
             {!version.is_valid && <StatusTag tone="danger">Inválida</StatusTag>}
             {!version.is_active && (
               <button
+                data-cy="uvl-delete-version"
                 className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-0.5"
                 title="Eliminar versión"
                 onClick={e => {
@@ -727,6 +730,7 @@ function ActivationModal({
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button
+            data-cy="uvl-activate-confirm"
             disabled={loading || !canActivate || activateMut.isPending}
             onClick={() => activateMut.mutate({ id: versionId, confirm: hasAffected }, { onSuccess: onClose })}
           >
@@ -837,7 +841,7 @@ export default function UvlEditor() {
             <GitBranch size={16} className="text-primary" />
             <h2 className="font-semibold text-sm">Versiones UVL</h2>
           </div>
-          <Button size="sm" className="w-full" onClick={handleStartCreate}>
+          <Button size="sm" className="w-full" data-cy="uvl-new-version" onClick={handleStartCreate}>
             <Plus size={14} className="mr-1.5" /> Nueva versión
           </Button>
         </div>
@@ -867,7 +871,7 @@ export default function UvlEditor() {
               <h2 className="font-semibold text-lg">Nueva versión</h2>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setIsCreating(false)}>Cancelar</Button>
-                <Button onClick={handleSave} disabled={createMut.isPending}>
+                <Button onClick={handleSave} data-cy="uvl-save" disabled={createMut.isPending}>
                   {createMut.isPending ? "Guardando..." : "Guardar versión"}
                 </Button>
               </div>
@@ -876,7 +880,7 @@ export default function UvlEditor() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nombre *</Label>
-                <Input value={draftName} onChange={e => setDraftName(e.target.value)} />
+                <Input value={draftName} data-cy="uvl-draft-name" onChange={e => setDraftName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Descripción</Label>
@@ -944,9 +948,9 @@ export default function UvlEditor() {
               </div>
               <div className="flex gap-2 shrink-0">
                 {!selectedVersion.is_active && selectedVersion.is_valid && (
-                  <Button onClick={() => setActivatingId(selectedVersion.id)}>Activar versión</Button>
+                  <Button data-cy="uvl-activate" onClick={() => setActivatingId(selectedVersion.id)}>Activar versión</Button>
                 )}
-                <Button variant="outline" onClick={handleStartCreate}>
+                <Button variant="outline" data-cy="uvl-fork" onClick={handleStartCreate}>
                   {selectedVersion.is_active ? "Crear versión desde esta" : "Bifurcar"}
                 </Button>
               </div>

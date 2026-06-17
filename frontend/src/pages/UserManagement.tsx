@@ -142,13 +142,13 @@ export default function UserManagement() {
     <div className="w-full px-[36px] sm:px-[44px] lg:px-[52px] xl:px-[60px] 2xl:px-[400px] py-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Gestión de usuarios</h1>
-        <Button size="sm" onClick={openCreate}>
+        <Button size="sm" data-cy="users-new" onClick={openCreate}>
           <Plus className="w-4 h-4 mr-1" /> Nuevo usuario
         </Button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="border border-border rounded-lg p-4 space-y-3 bg-card">
+        <form onSubmit={handleSubmit} data-cy="users-form" className="border border-border rounded-lg p-4 space-y-3 bg-card">
           <h2 className="font-medium text-sm">{isEditing ? "Editar usuario" : "Crear usuario"}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -203,7 +203,7 @@ export default function UserManagement() {
             <Button type="button" variant="outline" size="sm" onClick={closeForm}>
               Cancelar
             </Button>
-            <Button type="submit" size="sm" disabled={submitting}>
+            <Button type="submit" size="sm" data-cy="users-submit" disabled={submitting}>
               {submitting
                 ? isEditing ? "Guardando..." : "Creando..."
                 : isEditing ? "Guardar" : "Crear"}
@@ -229,7 +229,7 @@ export default function UserManagement() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-t border-border">
+                <tr key={u.id} data-cy="user-row" data-cy-email={u.email} className="border-t border-border">
                   <td className="px-4 py-2">{u.nombre}</td>
                   <td className="px-4 py-2 text-muted-foreground">{u.email}</td>
                   <td className="px-4 py-2">
@@ -243,6 +243,7 @@ export default function UserManagement() {
                   </td>
                   <td className="px-4 py-2">
                     <button
+                      data-cy="user-toggle"
                       title={u.id === currentUser?.id ? "No puedes desactivarte a ti mismo" : u.is_active ? "Desactivar" : "Activar"}
                       disabled={u.id === currentUser?.id}
                       onClick={() => toggleMut.mutate({ id: u.id, is_active: !u.is_active })}
@@ -262,6 +263,7 @@ export default function UserManagement() {
                     <div className="flex items-center justify-end gap-3">
                       <button
                         title="Editar"
+                        data-cy="user-edit"
                         onClick={() => openEdit(u)}
                         className="text-muted-foreground hover:text-foreground transition-colors"
                       >
@@ -269,6 +271,7 @@ export default function UserManagement() {
                       </button>
                       <button
                         title={u.id === currentUser?.id ? "No puedes eliminarte a ti mismo" : "Eliminar"}
+                        data-cy="user-delete"
                         disabled={u.id === currentUser?.id}
                         onClick={() => {
                           if (confirm(`¿Eliminar a ${u.nombre}?`)) {

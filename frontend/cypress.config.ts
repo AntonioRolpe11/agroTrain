@@ -1,44 +1,33 @@
 import { defineConfig } from "cypress";
 import { spawnSync } from "child_process";
-import { existsSync } from "fs";
 import { resolve } from "path";
 
 /**
  * E2E config for agroTrain.
  *
- * `cy.task("resetBackend")` shells out to the Django management command
+ * `cy.task("resetBackend")` runs the Django management command
  * `reset_test_state` so each spec begins with a deterministic DB + active UVL.
  * Relying on the frontend alone cannot reset server state, so we drive Django
  * directly from Cypress.
+ *
+ * The command MUST run against the same DB the server under test reads. The
+ * server runs inside the `backend` Docker container (Postgres), so we exec the
+ * command there via `docker compose exec`. Running a host Python interpreter
+ * would instead hit the dev SQLite file and seed users the container never
+ * sees, yielding 401 on login. Override the runner with `CYPRESS_RESET_CMD`
+ * (space-separated) if you run the backend outside Docker.
  */
 
-const backendDir = resolve(__dirname, "../backend");
+const repoRoot = resolve(__dirname, "..");
 
 /**
- * Resolve a Python interpreter that can run Django, portably across machines:
- * an explicit override wins, then the project venv (Unix + Windows layouts),
- * then `python3`/`python` from PATH. Avoids hard-coding `python`, which does not
- * exist by default on macOS (only `python3`).
+ * Argv that runs `reset_test_state` inside the running backend container.
+ * `-T` disables TTY allocation so spawnSync can capture stdout cleanly.
  */
-function resolvePython(): string {
-  const candidates = [
-    process.env.CYPRESS_PYTHON,
-    resolve(backendDir, ".venv/bin/python"),
-    resolve(backendDir, ".venv/Scripts/python.exe"),
-    resolve(backendDir, "venv/bin/python"),
-    resolve(backendDir, "venv/Scripts/python.exe"),
-  ].filter(Boolean) as string[];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  // Fall back to a PATH lookup; pick the first that actually runs.
-  for (const name of ["python3", "python"]) {
-    if (spawnSync(name, ["--version"]).status === 0) return name;
-  }
-  throw new Error(
-    "No Python interpreter found. Create a venv at backend/.venv or set CYPRESS_PYTHON.",
-  );
+function resetRunner(): string[] {
+  const override = process.env.CYPRESS_RESET_CMD;
+  if (override) return override.split(" ").filter(Boolean);
+  return ["docker", "compose", "exec", "-T", "backend", "python"];
 }
 
 export default defineConfig({
@@ -57,16 +46,16 @@ export default defineConfig({
     video: false,
     screenshotOnRunFailure: false,
     setupNodeEvents(on) {
-      const python = resolvePython();
       on("task", {
         resetBackend(opts: { uvl?: string } = {}) {
-          const args = ["manage.py", "reset_test_state", "--json"];
+          const [cmd, ...base] = resetRunner();
+          const args = [...base, "manage.py", "reset_test_state", "--json"];
           if (opts.uvl) args.push("--uvl", opts.uvl);
-          const result = spawnSync(python, args, { cwd: backendDir });
+          const result = spawnSync(cmd, args, { cwd: repoRoot });
           if (result.status !== 0) {
             return Promise.reject(
               new Error(
-                `reset_test_state failed (python: ${python}): ${result.stderr?.toString() ?? "unknown error"}`,
+                `reset_test_state failed (${cmd} ${args.join(" ")}): ${result.stderr?.toString() ?? "unknown error"}`,
               ),
             );
           }

@@ -92,6 +92,7 @@ export function FeatureNode({ node, index = 0, depth = 0, readOnly = false, labe
                   return (
                     <span
                       key={child.name}
+                      data-cy={`feature-${child.name}`}
                       className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm font-medium text-foreground"
                     >
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
@@ -108,6 +109,7 @@ export function FeatureNode({ node, index = 0, depth = 0, readOnly = false, labe
                 return (
                   <button
                     key={child.name}
+                    data-cy={`feature-${child.name}`}
                     type="button"
                     disabled={readOnly || isOrDisabled}
                     onClick={() => {

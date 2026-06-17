@@ -790,9 +790,9 @@ export default function Results() {
               </div>
             )}
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleFuse} disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
+              <Button onClick={handleFuse} data-cy="results-fuse" disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
               {fusionResult && (
-                <Button variant="outline" onClick={handleDownloadFusion}><FileDown className="mr-2 h-4 w-4" />Descargar CSV fusionado</Button>
+                <Button variant="outline" data-cy="results-download-fusion" onClick={handleDownloadFusion}><FileDown className="mr-2 h-4 w-4" />Descargar CSV fusionado</Button>
               )}
             </div>
             {fusionResult && (
@@ -903,6 +903,7 @@ export default function Results() {
                     <input
                       type="radio"
                       name="sensorType"
+                      data-cy="sensor-type-validacion"
                       className="mt-1"
                       checked={sensorType === "validacion"}
                       onChange={() => setSensorType("validacion")}
@@ -918,6 +919,7 @@ export default function Results() {
                     <input
                       type="radio"
                       name="sensorType"
+                      data-cy="sensor-type-digital"
                       className="mt-1"
                       checked={sensorType === "digital"}
                       onChange={() => setSensorType("digital")}
@@ -937,7 +939,7 @@ export default function Results() {
                     : fusedDataLevel === "reject" ? "Los datos fusionados no alcanzan el mínimo necesario para entrenar."
                     : "El CSV fusionado está listo. Pulsa el botón para iniciar el entrenamiento."}
                 </p>
-                <Button onClick={() => void handleGenerateSensor()} disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
+                <Button onClick={() => void handleGenerateSensor()} data-cy="results-train" disabled={!canTrain} className="shrink-0 transition-transform active:scale-[0.97]">
                   <Sparkles className="mr-2 h-4 w-4" />Generar sensor
                 </Button>
               </div>
@@ -950,7 +952,7 @@ export default function Results() {
             <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">Conectando con el proceso de entrenamiento…</span></div>
           )}
           {activeModelId && trainingStatus.data?.status === "training" && (
-            <div className="space-y-4">
+            <div className="space-y-4" data-cy="results-training-running">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-5 w-5 animate-spin text-olive" /><p className="font-medium">Entrenando modelo…</p>
                 {trainingStatus.data.algorithm && <span className="rounded-full bg-olive/15 px-2 py-0.5 text-xs font-semibold text-olive">{trainingStatus.data.algorithm}</span>}
@@ -962,7 +964,7 @@ export default function Results() {
             </div>
           )}
           {activeModelId && trainingStatus.data?.status === "error" && (
-            <div className="space-y-4">
+            <div className="space-y-4" data-cy="results-training-error">
               <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
                 <p className="font-semibold">Error en el entrenamiento</p>
                 {trainingStatus.data.detail && <p className="mt-1">{trainingStatus.data.detail}</p>}
@@ -971,7 +973,7 @@ export default function Results() {
             </div>
           )}
           {activeModelId && trainingStatus.data?.status === "completed" && (
-            <div className="space-y-5">
+            <div className="space-y-5" data-cy="results-training-completed">
               <div className="flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Entrenamiento completado</p></div>
               {trainingStatus.data.is_validation === false && (
                 <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -987,7 +989,7 @@ export default function Results() {
                 <div>
                   <p className="mb-2 text-sm font-medium">Métricas por objetivo</p>
                   <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-left text-sm">
+                    <table className="w-full text-left text-sm" data-cy="results-metrics">
                       <thead className="bg-muted/40">
                         <tr><th className="px-4 py-2 font-medium">Objetivo</th><th className="px-4 py-2 font-medium">MAE</th><th className="px-4 py-2 font-medium">RMSE</th><th className="px-4 py-2 font-medium">R²</th><th className="px-4 py-2 font-medium">Calidad</th></tr>
                       </thead>
@@ -1021,7 +1023,7 @@ export default function Results() {
                 </div>
               )}
               <div className="flex flex-wrap gap-3">
-                <Button variant="outline" onClick={handleDownloadModel}><Download className="mr-2 h-4 w-4" />Descargar modelo (.zip)</Button>
+                <Button variant="outline" data-cy="results-download-model" onClick={handleDownloadModel}><Download className="mr-2 h-4 w-4" />Descargar modelo (.zip)</Button>
                 <Button variant="outline" onClick={() => { setActiveModelId(null); trainMutation.reset(); }}>
                   <Sparkles className="mr-2 h-4 w-4" />Reentrenar
                 </Button>

@@ -52,6 +52,7 @@ export default function Layout() {
             {isAdmin && (
               <Link
                 to="/usuarios"
+                data-cy="nav-link-usuarios"
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
                   pathname === "/usuarios"
                     ? "bg-primary/10 text-olive"
@@ -65,6 +66,7 @@ export default function Layout() {
             {isAdmin && (
               <Link
                 to="/uvl-editor"
+                data-cy="nav-link-uvl"
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${
                   pathname === "/uvl-editor"
                     ? "bg-primary/10 text-olive"
@@ -88,6 +90,7 @@ export default function Layout() {
             </span>
             <button
               onClick={handleLogout}
+              data-cy="nav-logout"
               title="Cerrar sesión"
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >

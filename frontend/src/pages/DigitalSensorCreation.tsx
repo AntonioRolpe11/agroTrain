@@ -223,11 +223,11 @@ export default function DigitalSensorCreation() {
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3">
             <p className="text-sm text-muted-foreground flex-1 min-w-0">Restaura una configuración guardada.</p>
             <div className="flex flex-wrap gap-2 shrink-0">
-              <input ref={importInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-              <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
+              <input ref={importInputRef} data-cy="config-import-input" type="file" accept=".json" className="hidden" onChange={handleImport} />
+              <Button variant="outline" size="sm" data-cy="config-import" onClick={() => importInputRef.current?.click()}>
                 <Upload className="mr-2 h-4 w-4" />Importar JSON
               </Button>
-              <Button variant="outline" size="sm" onClick={() => { setShowLoadPanel((v) => !v); setShowSaveDialog(false); }}>
+              <Button variant="outline" size="sm" data-cy="config-list-toggle" onClick={() => { setShowLoadPanel((v) => !v); setShowSaveDialog(false); }}>
                 <BookOpen className="mr-2 h-4 w-4" />Mis configuraciones
               </Button>
             </div>
@@ -242,7 +242,7 @@ export default function DigitalSensorCreation() {
               ) : (
                 <ul className="divide-y divide-border">
                   {configsQuery.data!.map((cfg) => (
-                    <li key={cfg.id} className="flex items-center justify-between px-4 py-2 gap-2">
+                    <li key={cfg.id} data-cy="config-item" className="flex items-center justify-between px-4 py-2 gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{cfg.nombre}</p>
                         <p className="text-xs text-muted-foreground">
@@ -273,12 +273,14 @@ export default function DigitalSensorCreation() {
                         <Button
                           size="sm"
                           variant="outline"
+                          data-cy="config-load"
                           onClick={() => handleLoadFromServer({ features: cfg.features, geo: cfg.geo })}
                         >
                           Cargar
                         </Button>
                         <button
                           title="Eliminar"
+                          data-cy="config-delete"
                           className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
                           onClick={() => { if (confirm(`¿Eliminar "${cfg.nombre}"?`)) eliminarMut.mutate(cfg.id); }}
                         >
@@ -338,6 +340,7 @@ export default function DigitalSensorCreation() {
               footer={
                 <Button
                   type="button"
+                  data-cy="wizard-parcel-next"
                   onClick={() => setUnlockedStepIndex(1)}
                   disabled={!parcelStepReady}
                 >
@@ -399,7 +402,7 @@ export default function DigitalSensorCreation() {
         <div className="mt-8 space-y-2">
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3">
             <p className="text-sm text-muted-foreground flex-1 min-w-0">Guarda la configuración actual en el servidor.</p>
-            <Button variant="outline" size="sm" onClick={() => { setShowSaveDialog((v) => !v); }}>
+            <Button variant="outline" size="sm" data-cy="config-save-toggle" onClick={() => { setShowSaveDialog((v) => !v); }}>
               <Save className="mr-2 h-4 w-4" />Guardar configuración
             </Button>
           </div>
@@ -408,13 +411,14 @@ export default function DigitalSensorCreation() {
             <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-3">
               <Input
                 className="flex-1"
+                data-cy="config-save-name"
                 placeholder="Nombre de la configuración..."
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void handleSaveToServer(); }}
                 autoFocus
               />
-              <Button size="sm" disabled={!saveName.trim() || guardarMut.isPending} onClick={() => void handleSaveToServer()}>
+              <Button size="sm" data-cy="config-save-submit" disabled={!saveName.trim() || guardarMut.isPending} onClick={() => void handleSaveToServer()}>
                 {guardarMut.isPending ? "Guardando..." : "Guardar"}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowSaveDialog(false)}>Cancelar</Button>

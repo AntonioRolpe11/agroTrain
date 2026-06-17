@@ -63,10 +63,10 @@ export default function Login() {
           </div>
 
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <p data-cy="login-error" className="text-sm text-destructive">{error}</p>
           )}
 
-          <Button type="submit" className="w-full" disabled={submitting}>
+          <Button type="submit" data-cy="login-submit" className="w-full" disabled={submitting}>
             {submitting ? "Entrando..." : "Entrar"}
           </Button>
         </form>

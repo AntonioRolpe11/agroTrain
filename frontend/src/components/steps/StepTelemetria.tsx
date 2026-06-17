@@ -81,7 +81,7 @@ export function StepTelemetria({ serverErrors, isPending, onComplete }: StepTele
       {telemetryActive && <ParcelMap />}
 
       {serverErrors.length > 0 && (
-        <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+        <div data-cy="step-server-errors" className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
           <p className="mb-2 font-medium">Revisa este bloque antes de continuar</p>
           <ul className="list-disc space-y-1 pl-5">
             {serverErrors.map((e, i) => <li key={i}>{e}</li>)}
@@ -90,7 +90,7 @@ export function StepTelemetria({ serverErrors, isPending, onComplete }: StepTele
       )}
 
       <div className="mt-4 flex justify-end border-t border-border/60 pt-4">
-        <Button type="button" size="sm" onClick={onComplete} disabled={isPending || !canComplete}>
+        <Button type="button" size="sm" data-cy="wizard-telemetry-next" onClick={onComplete} disabled={isPending || !canComplete}>
           Listo, continuar
         </Button>
       </div>

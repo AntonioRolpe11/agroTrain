@@ -74,14 +74,14 @@ export function SensorFileCard({
   };
 
   return (
-    <div className={`rounded-lg border bg-background/70 p-4 ${toneStyles[tone]}`}>
+    <div data-cy="sensor-card" data-cy-label={label} className={`rounded-lg border bg-background/70 p-4 ${toneStyles[tone]}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 text-sensor-green" />
           <span className="text-sm font-medium">{label}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${tagStyles[tone]}`}>
+          <span data-cy="sensor-tone" className={`rounded-full border px-2 py-0.5 text-xs font-medium ${tagStyles[tone]}`}>
             {tagLabels[tone]}
           </span>
           {dataset && (
@@ -96,6 +96,7 @@ export function SensorFileCard({
         <>
           <input
             ref={inputRef}
+            data-cy="sensor-file-input"
             type="file"
             accept=".csv,text/csv"
             className="hidden"
@@ -130,6 +131,7 @@ export function SensorFileCard({
               <div className="space-y-1">
                 <Label className="text-xs">Columna de fecha/hora</Label>
                 <select
+                  data-cy="sensor-timestamp-col"
                   className={`w-full rounded-md border bg-background px-2 py-1.5 text-xs transition-colors ${
                     timestampCol ? "border-sensor-green/40 text-foreground" : "border-satellite-amber/40 text-muted-foreground"
                   }`}
@@ -147,6 +149,7 @@ export function SensorFileCard({
               <div className="space-y-1">
                 <Label className="text-xs">Columna de dato</Label>
                 <select
+                  data-cy="sensor-data-col"
                   className={`w-full rounded-md border bg-background px-2 py-1.5 text-xs transition-colors ${
                     dataCol ? "border-sensor-green/40 text-foreground" : "border-satellite-amber/40 text-muted-foreground"
                   }`}

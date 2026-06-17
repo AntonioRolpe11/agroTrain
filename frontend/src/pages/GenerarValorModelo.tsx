@@ -417,7 +417,7 @@ export default function GenerarValorModelo() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => void handleExtractTelemetry()} disabled={!canExtractTelemetry || !allSensorFilesReady || extractTelemetryMutation.isPending}>
+            <Button data-cy="gv-extract-telemetry" onClick={() => void handleExtractTelemetry()} disabled={!canExtractTelemetry || !allSensorFilesReady || extractTelemetryMutation.isPending}>
               {extractTelemetryMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
               Extraer telemetría
             </Button>
@@ -441,8 +441,8 @@ export default function GenerarValorModelo() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handleFuse} disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
-            <Button onClick={() => void handlePredict()} disabled={!canPredict}>
+            <Button data-cy="gv-fuse" onClick={handleFuse} disabled={!canFuse}><GitMerge className="mr-2 h-4 w-4" />Fusionar datos</Button>
+            <Button data-cy="gv-predict" onClick={() => void handlePredict()} disabled={!canPredict}>
               {predictMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
               Generar valor
             </Button>
@@ -466,7 +466,7 @@ export default function GenerarValorModelo() {
             </div>
           )}
           {lastPrediction && (
-            <div className="mt-5 rounded-xl border border-sensor-green/25 bg-sensor-green/10 p-5">
+            <div className="mt-5 rounded-xl border border-sensor-green/25 bg-sensor-green/10 p-5" data-cy="gv-prediction-result">
               <div className="mb-4 flex items-center gap-2 text-sensor-green"><CheckCircle2 className="h-5 w-5" /><p className="font-semibold">Valor generado para el {fmtDate(lastPrediction.predicted_for_date)}</p></div>
               <p className="mb-3 text-sm text-muted-foreground">Generado el {fmt(lastPrediction.generated_at)} con {lastPrediction.input_row_count} filas de entrada.</p>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -533,7 +533,7 @@ export default function GenerarValorModelo() {
 
               <div className="space-y-2">
                 {recentHistory.map((p) => (
-                  <div key={p.prediction_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/70 p-3 text-sm">
+                  <div key={p.prediction_id} data-cy="gv-history-item" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background/70 p-3 text-sm">
                     <div className="flex flex-col gap-0.5">
                       <span className="font-medium">{fmtDate(p.predicted_for_date)}</span>
                       <span className="text-xs text-muted-foreground">Generado el {fmt(p.generated_at)}</span>
@@ -543,6 +543,7 @@ export default function GenerarValorModelo() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        data-cy="gv-delete-prediction"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         title="Borrar predicción"
                         disabled={deletePredictionMutation.isPending}

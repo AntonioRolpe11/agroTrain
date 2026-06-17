@@ -91,7 +91,7 @@ export function StepObjetivo({
       )}
 
       {serverErrors.length > 0 && (
-        <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+        <div data-cy="step-server-errors" className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
           <p className="mb-2 font-medium">Revisa este bloque antes de continuar</p>
           <ul className="list-disc space-y-1 pl-5">
             {serverErrors.map((e, i) => <li key={i}>{e}</li>)}
@@ -100,10 +100,11 @@ export function StepObjetivo({
       )}
 
       <div className="mt-4 flex flex-wrap gap-3">
-        <Button variant="outline" onClick={onReset} disabled={isPending}>
+        <Button variant="outline" data-cy="wizard-reset" onClick={onReset} disabled={isPending}>
           Reiniciar formulario
         </Button>
         <Button
+          data-cy="wizard-generate"
           disabled={!hasObjective || isPending}
           onClick={onGenerate}
           className="transition-transform active:scale-[0.97]"

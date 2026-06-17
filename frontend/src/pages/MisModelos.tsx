@@ -113,8 +113,8 @@ export default function MisModelos() {
           <p className="text-sm text-muted-foreground mt-1">Modelos entrenados guardados en el servidor</p>
         </div>
         <div>
-          <input ref={importRef} type="file" accept=".zip" className="hidden" onChange={handleImport} />
-          <Button variant="outline" size="sm" onClick={() => importRef.current?.click()} disabled={importMut.isPending}>
+          <input ref={importRef} data-cy="models-import-input" type="file" accept=".zip" className="hidden" onChange={handleImport} />
+          <Button variant="outline" size="sm" data-cy="models-import" onClick={() => importRef.current?.click()} disabled={importMut.isPending}>
             <Upload className="w-4 h-4 mr-2" />
             {importMut.isPending ? "Importando…" : "Importar ZIP"}
           </Button>
@@ -151,6 +151,8 @@ export default function MisModelos() {
                 return (
                 <tr
                   key={m.model_id}
+                  data-cy="model-row"
+                  data-cy-model-id={m.model_id}
                   className={`border-b border-border last:border-0 ${rowBg}`}
                 >
                   <td className="px-4 py-3">
@@ -187,25 +189,26 @@ export default function MisModelos() {
                   <td className={`sticky right-0 z-10 px-4 py-3 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)] ${rowBg}`}>
                     <div className="flex items-center justify-end gap-2">
                       {hasModelGeo(m) ? (
-                        <Link to={`/mis-modelos/${m.model_id}/generar-valor`}>
+                        <Link to={`/mis-modelos/${m.model_id}/generar-valor`} data-cy="model-generar">
                           <Button variant="outline" size="sm">
                             <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                             Generar valor
                           </Button>
                         </Link>
                       ) : (
-                        <Button variant="outline" size="sm" disabled title="Modelo sin ubicación guardada">
+                        <Button variant="outline" size="sm" data-cy="model-generar-disabled" disabled title="Modelo sin ubicación guardada">
                           <Sparkles className="w-3.5 h-3.5 mr-1.5" />
                           Generar valor
                         </Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => handleDownload(m)}>
+                      <Button variant="outline" size="sm" data-cy="model-download" onClick={() => handleDownload(m)}>
                         <Download className="w-3.5 h-3.5 mr-1.5" />
                         ZIP
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
+                        data-cy="model-delete"
                         className="text-destructive hover:text-destructive"
                         onClick={() => handleDelete(m)}
                         disabled={deletingId === m.model_id}
