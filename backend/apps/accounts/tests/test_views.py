@@ -98,9 +98,10 @@ class TestUserDetail:
         assert response.status_code == 200
         assert response.data["email"] == tecnico_user.email
 
-    def test_tecnico_can_view_self(self, tecnico_user, tecnico_client):
+    def test_tecnico_cannot_view_self_detail(self, tecnico_user, tecnico_client):
+        # La gestión de usuarios es solo de admin; el técnico usa /auth/me.
         response = tecnico_client.get(f"/api/v1/auth/users/{tecnico_user.pk}/")
-        assert response.status_code == 200
+        assert response.status_code == 403
 
     def test_tecnico_cannot_view_other(self, tecnico_user, tecnico_client):
         other = CustomUser.objects.create_user(
@@ -108,6 +109,16 @@ class TestUserDetail:
         )
         response = tecnico_client.get(f"/api/v1/auth/users/{other.pk}/")
         assert response.status_code == 403
+
+    def test_tecnico_cannot_edit_self(self, tecnico_user, tecnico_client):
+        response = tecnico_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"nombre": "Hackeado"},
+            format="json",
+        )
+        assert response.status_code == 403
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.nombre != "Hackeado"
 
     def test_admin_updates_user(self, admin_client, tecnico_user):
         response = admin_client.patch(
@@ -140,3 +151,81 @@ class TestUserDetail:
             format="json",
         )
         assert response.status_code == 400
+
+    def test_tecnico_cannot_escalate_own_role(self, tecnico_user, tecnico_client):
+        response = tecnico_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"role": ROLE_ADMIN},
+            format="json",
+        )
+        assert response.status_code == 403
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.role == ROLE_TECNICO
+
+    def test_admin_can_change_other_user_role(self, admin_client, tecnico_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"role": ROLE_ADMIN},
+            format="json",
+        )
+        assert response.status_code == 200
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.role == ROLE_ADMIN
+
+    def test_admin_cannot_change_own_role(self, admin_client, admin_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{admin_user.pk}/",
+            {"role": ROLE_TECNICO},
+            format="json",
+        )
+        assert response.status_code == 400
+        admin_user.refresh_from_db()
+        assert admin_user.role == ROLE_ADMIN
+
+    def test_admin_can_change_email(self, admin_client, tecnico_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"email": "nuevo@u.com"},
+            format="json",
+        )
+        assert response.status_code == 200
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.email == "nuevo@u.com"
+
+    def test_change_email_to_existing_fails(self, admin_client, admin_user, tecnico_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"email": admin_user.email},
+            format="json",
+        )
+        assert response.status_code in (400, 422)
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.email != admin_user.email
+
+    def test_admin_can_reset_other_user_password(self, admin_client, tecnico_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"password": "nuevaClave9"},
+            format="json",
+        )
+        assert response.status_code == 200
+        tecnico_user.refresh_from_db()
+        assert tecnico_user.check_password("nuevaClave9")
+
+    def test_reset_password_too_short_fails(self, admin_client, tecnico_user):
+        response = admin_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"password": "short"},
+            format="json",
+        )
+        assert response.status_code in (400, 422)
+
+    def test_tecnico_cannot_change_own_password(self, tecnico_user, tecnico_client):
+        response = tecnico_client.patch(
+            f"/api/v1/auth/users/{tecnico_user.pk}/",
+            {"password": "nuevaClave9"},
+            format="json",
+        )
+        assert response.status_code == 403
+        tecnico_user.refresh_from_db()
+        assert not tecnico_user.check_password("nuevaClave9")

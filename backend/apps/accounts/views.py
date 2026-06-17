@@ -41,29 +41,33 @@ def user_list_create(request):
     responses={200: UserSerializer},
 )
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminRole])
 def user_detail(request, pk: int):
-    # Admin puede ver/editar cualquier usuario; técnico solo el suyo
-    if not request.user.is_admin and request.user.pk != pk:
-        return Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
-
+    # La gestión de usuarios (ver, editar, eliminar cualquier cuenta) es exclusiva
+    # de administradores. El técnico consulta su propio perfil vía /auth/me.
     user = get_object_or_404(CustomUser, pk=pk)
+    is_self = user.pk == request.user.pk
 
     if request.method == "GET":
         return Response(UserSerializer(user).data)
 
     if request.method == "DELETE":
-        if not request.user.is_admin:
-            return Response({"detail": "Solo administradores pueden eliminar usuarios."}, status=403)
-        if user.pk == request.user.pk:
+        if is_self:
             return Response({"detail": "No puedes eliminar tu propia cuenta."}, status=400)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # Un administrador no puede cambiar su propio rol (evita quedarse sin administradores).
+    if is_self and "role" in request.data and request.data["role"] != request.user.role:
+        return Response(
+            {"detail": "No puedes cambiar tu propio rol."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     partial = request.method == "PATCH"
     serializer = UserUpdateSerializer(user, data=request.data, partial=partial)
     serializer.is_valid(raise_exception=True)
-    if user.pk == request.user.pk and "is_active" in request.data:
+    if is_self and "is_active" in request.data:
         return Response({"detail": "No puedes desactivar tu propia cuenta."}, status=400)
     serializer.save()
     return Response(UserSerializer(user).data)

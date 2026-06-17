@@ -24,6 +24,17 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
+    # Opcional: si se envía, el administrador restablece la contraseña del usuario.
+    password = serializers.CharField(write_only=True, min_length=8, required=False)
+
     class Meta:
         model = CustomUser
-        fields = ["nombre", "role", "is_active"]
+        fields = ["email", "nombre", "role", "is_active", "password"]
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        user = super().update(instance, validated_data)
+        if password:
+            user.set_password(password)
+            user.save(update_fields=["password"])
+        return user

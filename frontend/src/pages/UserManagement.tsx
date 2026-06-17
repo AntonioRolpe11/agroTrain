@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, UserCheck, UserX } from "lucide-react";
+import { Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +30,28 @@ function useCreateUser() {
       toast.success("Usuario creado.");
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Error al crear usuario."),
+  });
+}
+
+function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, string> }) =>
+      authFetch(`/api/v1/auth/users/${id}/`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          throw new Error(body?.detail ?? "Error al actualizar usuario.");
+        }
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: USERS_KEY });
+      toast.success("Usuario actualizado.");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Error al actualizar usuario."),
   });
 }
 
@@ -68,31 +90,66 @@ export default function UserManagement() {
   const { data: users = [], isLoading } = useUsers();
   const { user: currentUser } = useAuth();
   const createMut = useCreateUser();
+  const updateMut = useUpdateUser();
   const toggleMut = useToggleActive();
   const deleteMut = useDeleteUser();
 
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await createMut.mutateAsync(form);
+  const isEditing = editingId !== null;
+  const editingSelf = editingId === currentUser?.id;
+
+  const openCreate = () => {
+    if (showForm && !isEditing) {
+      closeForm();
+      return;
+    }
+    setEditingId(null);
     setForm(EMPTY_FORM);
-    setShowForm(false);
+    setShowForm(true);
   };
+
+  const openEdit = (u: AuthUser) => {
+    setEditingId(u.id);
+    setForm({ email: u.email, nombre: u.nombre, password: "", role: u.role });
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isEditing && editingId !== null) {
+      const data: Record<string, string> = { nombre: form.nombre, email: form.email };
+      if (!editingSelf) data.role = form.role;
+      if (form.password) data.password = form.password;
+      await updateMut.mutateAsync({ id: editingId, data });
+    } else {
+      await createMut.mutateAsync(form);
+    }
+    closeForm();
+  };
+
+  const submitting = createMut.isPending || updateMut.isPending;
 
   return (
     <div className="w-full px-[36px] sm:px-[44px] lg:px-[52px] xl:px-[60px] 2xl:px-[400px] py-8 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Gestión de usuarios</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+        <Button size="sm" onClick={openCreate}>
           <Plus className="w-4 h-4 mr-1" /> Nuevo usuario
         </Button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="border border-border rounded-lg p-4 space-y-3 bg-card">
-          <h2 className="font-medium text-sm">Crear usuario</h2>
+        <form onSubmit={handleSubmit} className="border border-border rounded-lg p-4 space-y-3 bg-card">
+          <h2 className="font-medium text-sm">{isEditing ? "Editar usuario" : "Crear usuario"}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="nu-nombre">Nombre</Label>
@@ -114,13 +171,16 @@ export default function UserManagement() {
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="nu-password">Contraseña</Label>
+              <Label htmlFor="nu-password">
+                {isEditing ? "Nueva contraseña (opcional)" : "Contraseña"}
+              </Label>
               <Input
                 id="nu-password"
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                required
+                placeholder={isEditing ? "Dejar vacío para no cambiarla" : undefined}
+                required={!isEditing}
                 minLength={8}
               />
             </div>
@@ -130,7 +190,9 @@ export default function UserManagement() {
                 id="nu-role"
                 value={form.role}
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                disabled={isEditing && editingSelf}
+                title={isEditing && editingSelf ? "No puedes cambiar tu propio rol" : undefined}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="tecnico">Técnico</option>
                 <option value="administrador">Administrador</option>
@@ -138,11 +200,13 @@ export default function UserManagement() {
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(false)}>
+            <Button type="button" variant="outline" size="sm" onClick={closeForm}>
               Cancelar
             </Button>
-            <Button type="submit" size="sm" disabled={createMut.isPending}>
-              {createMut.isPending ? "Creando..." : "Crear"}
+            <Button type="submit" size="sm" disabled={submitting}>
+              {submitting
+                ? isEditing ? "Guardando..." : "Creando..."
+                : isEditing ? "Guardar" : "Crear"}
             </Button>
           </div>
         </form>
@@ -195,18 +259,27 @@ export default function UserManagement() {
                     {new Date(u.date_joined).toLocaleDateString("es-ES")}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button
-                      title={u.id === currentUser?.id ? "No puedes eliminarte a ti mismo" : "Eliminar"}
-                      disabled={u.id === currentUser?.id}
-                      onClick={() => {
-                        if (confirm(`¿Eliminar a ${u.nombre}?`)) {
-                          deleteMut.mutate(u.id);
-                        }
-                      }}
-                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        title="Editar"
+                        onClick={() => openEdit(u)}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        title={u.id === currentUser?.id ? "No puedes eliminarte a ti mismo" : "Eliminar"}
+                        disabled={u.id === currentUser?.id}
+                        onClick={() => {
+                          if (confirm(`¿Eliminar a ${u.nombre}?`)) {
+                            deleteMut.mutate(u.id);
+                          }
+                        }}
+                        className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
