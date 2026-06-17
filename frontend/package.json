@@ -13,7 +13,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "cypress:open": "cypress open",
-    "cypress:run": "cypress run"
+    "cypress:run": "cypress run",
+    "e2e:up": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --wait db-e2e backend-e2e frontend-e2e",
+    "e2e:down": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml rm -sfv db-e2e backend-e2e frontend-e2e",
+    "e2e:run": "npm run e2e:up && cypress run",
+    "e2e:open": "npm run e2e:up && cypress open"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",

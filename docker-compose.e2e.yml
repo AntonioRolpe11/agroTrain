@@ -1,0 +1,76 @@
+# Isolated E2E stack for Cypress.
+#
+# Cypress's reset_test_state flushes the DB before every spec. Pointing it at
+# the dev backend wipes the developer's users (login breaks). This override adds
+# a throwaway stack with its OWN Postgres volume and OWN ports, so the dev stack
+# (db / backend / frontend, DB "agrotrain") is never touched.
+#
+# Bring up (alongside or instead of the dev stack):
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up db-e2e backend-e2e frontend-e2e
+#
+# Run the suite (Cypress defaults already point at :8081 / :8001):
+#   cd frontend && npm run cypress:run
+#
+# Safe teardown (drops only the E2E volume, never postgres_data):
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml rm -sfv db-e2e backend-e2e frontend-e2e
+#   docker volume rm agrotrain_postgres_e2e_data
+services:
+  db-e2e:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agrotrain_e2e
+      POSTGRES_USER: agrotrain
+      POSTGRES_PASSWORD: agrotrain_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_e2e_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agrotrain -d agrotrain_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend-e2e:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["/app/docker-entrypoint.sh"]
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+      - ./eeproject-492305-fa584ff1a217.json:/app/secrets/gee-key.json:ro
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.docker
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-docker-dev}
+      POSTGRES_DB: agrotrain_e2e
+      POSTGRES_USER: agrotrain
+      POSTGRES_PASSWORD: agrotrain_dev
+      POSTGRES_HOST: db-e2e
+      EE_SERVICE_ACCOUNT: ${EE_SERVICE_ACCOUNT:-gee-images@eeproject-492305.iam.gserviceaccount.com}
+      EE_PRIVATE_KEY_FILE: /app/secrets/gee-key.json
+      EE_PROJECT: ${EE_PROJECT:-eeproject-492305}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@agrotrain.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8001:8000"
+    depends_on:
+      db-e2e:
+        condition: service_healthy
+
+  frontend-e2e:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      VITE_BACKEND_URL: http://localhost:8001
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend-e2e
+
+volumes:
+  postgres_e2e_data:

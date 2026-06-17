@@ -10,31 +10,47 @@ import { resolve } from "path";
  * Relying on the frontend alone cannot reset server state, so we drive Django
  * directly from Cypress.
  *
- * The command MUST run against the same DB the server under test reads. The
- * server runs inside the `backend` Docker container (Postgres), so we exec the
- * command there via `docker compose exec`. Running a host Python interpreter
- * would instead hit the dev SQLite file and seed users the container never
- * sees, yielding 401 on login. Override the runner with `CYPRESS_RESET_CMD`
- * (space-separated) if you run the backend outside Docker.
+ * reset_test_state FLUSHES the DB before every spec, so it must NOT run against
+ * the developer's dev stack (that wipes their users → login breaks). It targets
+ * the isolated E2E stack defined in `docker-compose.e2e.yml`: a throwaway
+ * `backend-e2e` container on :8001 backed by its own `agrotrain_e2e` Postgres
+ * volume, served by `frontend-e2e` on :8081. The dev `backend` (:8000, DB
+ * `agrotrain`) is never touched. Override the runner with `CYPRESS_RESET_CMD`
+ * (space-separated) if you run the backend elsewhere.
+ *
+ * Bring the E2E stack up first:
+ *   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up \
+ *     db-e2e backend-e2e frontend-e2e
  */
 
 const repoRoot = resolve(__dirname, "..");
 
 /**
- * Argv that runs `reset_test_state` inside the running backend container.
+ * Argv that runs `reset_test_state` inside the isolated E2E backend container.
  * `-T` disables TTY allocation so spawnSync can capture stdout cleanly.
  */
 function resetRunner(): string[] {
   const override = process.env.CYPRESS_RESET_CMD;
   if (override) return override.split(" ").filter(Boolean);
-  return ["docker", "compose", "exec", "-T", "backend", "python"];
+  return [
+    "docker",
+    "compose",
+    "-f",
+    "docker-compose.yml",
+    "-f",
+    "docker-compose.e2e.yml",
+    "exec",
+    "-T",
+    "backend-e2e",
+    "python",
+  ];
 }
 
 export default defineConfig({
   e2e: {
-    baseUrl: "http://localhost:8080",
+    baseUrl: "http://localhost:8081",
     env: {
-      backendUrl: "http://localhost:8000",
+      backendUrl: "http://localhost:8001",
       adminEmail: "admin@test.local",
       adminPassword: "admin1234",
       tecnicoEmail: "tecnico@test.local",
